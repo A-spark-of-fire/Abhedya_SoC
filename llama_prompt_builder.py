@@ -1,5 +1,5 @@
 """
-Prompt Constructor Engine for Abhedya SoC / Trinetra AI
+Prompt Constructor Engine for Abhedya SoC
 Bharat AI-SoC Challenge — Problem Statement 3: On-Device Security
 
 Translates Tier 1 multi-model threat telemetry (SMS, PhishGuard, Network NIDS)
@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional
 
 
 SYSTEM_PROMPT = (
-    "You are the on-device security assistant for Abhedya SoC / Trinetra AI.\n"
+    "You are the on-device security assistant for Abhedya SoC.\n"
     "Your job is to translate technical threat telemetry from 3 on-device ML sensors "
     "(SMS Scam Detector, PhishGuard URL Analyzer, and Network NIDS) into a simple, "
     "plain-English advisory for non-technical users.\n\n"

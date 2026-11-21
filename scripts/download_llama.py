@@ -1,5 +1,5 @@
 """
-Cross-Platform Python Model Asset Downloader for Abhedya SoC / Trinetra AI
+Cross-Platform Python Model Asset Downloader for Abhedya SoC
 Downloads:
 1. tokenizer.json (~9 MB)
 2. xnnpack/config.json (~1 KB)
@@ -91,7 +91,7 @@ def main():
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     print("=" * 65)
-    print("  Abhedya SoC / Trinetra AI -- ExecuTorch Model Asset Downloader")
+    print("  Abhedya SoC -- ExecuTorch Model Asset Downloader")
     print(f"  Target Directory: {dest_dir}")
     print(f"  Source: huggingface.co/{HF_REPO}")
     print("=" * 65)

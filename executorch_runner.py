@@ -1,5 +1,5 @@
 """
-ExecuTorch Llama 3.2 Engine Wrapper for Abhedya SoC / Trinetra AI
+ExecuTorch Llama 3.2 Engine Wrapper for Abhedya SoC
 Bharat AI-SoC Challenge — Problem Statement 3: On-Device Security
 
 Runs the pre-quantized Meta Llama 3.2 1B-Instruct model (4-bit XNNPACK PTE)

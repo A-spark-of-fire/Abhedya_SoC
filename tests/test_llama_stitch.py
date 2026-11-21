@@ -1,6 +1,6 @@
 """
 Unit and Integration Tests for ExecuTorch Llama 3.2 Reasoning Engine & Telemetry Stitching.
-Project: Abhedya SoC / Trinetra AI (Bharat AI-SoC Challenge - Problem Statement 3)
+Project: Abhedya SoC (Bharat AI-SoC Challenge - Problem Statement 3)
 """
 
 import os

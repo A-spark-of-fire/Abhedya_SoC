@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Model Asset Downloader for Abhedya SoC / Trinetra AI
+# Model Asset Downloader for Abhedya SoC
 # Bharat AI-SoC Challenge — Problem Statement 3 (On-Device Security)
 #
 # Target Platform: Raspberry Pi 5 / Arm64 (Debian Bookworm 64-bit)

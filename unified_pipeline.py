@@ -621,75 +621,47 @@ def extract_urls_from_text(text: str) -> List[str]:
     return list(dict.fromkeys(cleaned))  # Deduplicate preserving order
 
 
-def generate_llama_executorch_prompt(aggregated_telemetry: Dict[str, Any]) -> str:
-    """
-    Downstream Llama 3.2 ExecuTorch Edge LLM Prompt Generator.
-    Produces formatted system & user prompts for on-device SoC reasoning.
-    """
-    status = aggregated_telemetry.get("status", "CLEAN")
-    threat_count = aggregated_telemetry.get("active_threats_count", 0)
-    findings = aggregated_telemetry.get("findings", [])
+from llama_prompt_builder import (
+    build_llama_prompt,
+    generate_grounded_fallback_advisory,
+    clean_llm_response,
+    SYSTEM_PROMPT,
+)
+from executorch_runner import ExecuTorchLlamaEngine
 
-    findings_summary = []
-    for idx, f in enumerate(findings, 1):
-        mod = f.get("module")
-        if mod == "SMS_Spam_Detector":
-            findings_summary.append(
-                f"[Finding {idx} - SMS Threat Classifier]\n"
-                f"  Text: \"{f.get('raw_text', '')}\"\n"
-                f"  Threat Level: {f.get('threat_level')}, Threat Score: {f.get('threat_score'):.4f}\n"
-                f"  Detected Triggers: {', '.join(f.get('detected_triggers', [])) or 'None'}\n"
-            )
-        elif mod == "PhishGuard_URL_Detector":
-            findings_summary.append(
-                f"[Finding {idx} - PhishGuard URL Classifier]\n"
-                f"  Target URL: {f.get('url')}\n"
-                f"  Verdict: {'MALICIOUS PHISHING' if f.get('is_phishing') else 'BENIGN'}\n"
-                f"  Phishing Confidence: {f.get('confidence_score'):.4f}\n"
-                f"  Domain Anomalies: {'; '.join(f.get('domain_anomalies', []))}\n"
-            )
-        elif mod == "Network_NIDS":
-            shap_text = ", ".join([f"{e['feature']}={e['value']} (SHAP {e['shap_value']:+.2f})" for e in f.get('shap_evidence', [])])
-            findings_summary.append(
-                f"[Finding {idx} - Edge Network NIDS]\n"
-                f"  Flow: {f.get('flow_id')} ({f.get('src_ip')}:{f.get('src_port')} -> {f.get('dst_ip')}:{f.get('dst_port')} {f.get('protocol')})\n"
-                f"  Attack Type: {f.get('attack_type')} (Confidence: {f.get('confidence'):.4f})\n"
-                f"  Top SHAP Evidence: {shap_text}\n"
-            )
-
-    findings_block = "\n".join(findings_summary) if findings_summary else "No active security findings."
-
-    prompt = (
-        "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n"
-        "You are the On-Device Security Copilot running on a low-power Edge SoC (Bharat AI-SoC / Raspberry Pi 5). "
-        "Analyze the following multi-model telemetry produced by sub-millisecond local ML detectors. "
-        "Provide: (1) Concise Threat Assessment, (2) Multi-Vector Correlation, and (3) Immediate Edge Mitigation Actions.<|eot_id|>\n"
-        "<|start_header_id|>user<|end_header_id|>\n\n"
-        f"EDGE SECURITY TELEMETRY EVENT:\n"
-        f"• Status: {status}\n"
-        f"• Active Threats Count: {threat_count}\n"
-        f"• Timestamp: {aggregated_telemetry.get('timestamp')}\n\n"
-        f"DETECTOR FINDINGS:\n{findings_block}\n\n"
-        "Synthesize this event for the edge SoC security operator.<|eot_id|>\n"
-        "<|start_header_id|>assistant<|end_header_id|>\n"
-    )
-    return prompt
+# Backward compatibility alias
+generate_llama_executorch_prompt = build_llama_prompt
 
 
 class UnifiedThreatPipeline:
-    """Unified Orchestration Pipeline combining SMS, URL, and Network threat modules."""
+    """Unified Orchestration Pipeline combining SMS, URL, Network threat modules and ExecuTorch reasoning."""
 
     def __init__(
         self,
         sms_dir: Optional[Path] = None,
         phish_dir: Optional[Path] = None,
-        nids_dir: Optional[Path] = None
+        nids_dir: Optional[Path] = None,
+        enable_llm_reasoning: bool = True,
     ):
         logger.info("Initializing Unified Multi-Model Edge Threat Pipeline...")
         self.sms_detector = SMSScamDetector(sms_dir)
         self.url_detector = PhishGuardURLDetector(phish_dir)
         self.nids = NetworkNIDS(nids_dir)
+        self.enable_llm_reasoning = enable_llm_reasoning
+        self.llama_engine = ExecuTorchLlamaEngine()
         logger.info("Unified Pipeline fully initialized and ready.")
+
+    def process_telemetry(self, telemetry: Dict[str, Any], generate_advisory: bool = True) -> Dict[str, Any]:
+        """
+        Stitches Llama 3.2 ExecuTorch zero-shot prompt and plain-English advisory
+        into the aggregated telemetry payload.
+        """
+        telemetry["llama_prompt"] = build_llama_prompt(telemetry)
+        if generate_advisory and self.enable_llm_reasoning:
+            telemetry["llama_advisory"] = self.llama_engine.generate_advisory(telemetry)
+        else:
+            telemetry["llama_advisory"] = None
+        return telemetry
 
     def analyze_sms(self, message: str, cross_check_urls: bool = True) -> Dict[str, Any]:
         """Analyzes SMS text, automatically extracting embedded URLs for PhishGuard validation."""
@@ -714,8 +686,7 @@ class UnifiedThreatPipeline:
             "active_threats_count": active_threats,
             "findings": findings
         }
-        telemetry["llama_prompt"] = generate_llama_executorch_prompt(telemetry)
-        return telemetry
+        return self.process_telemetry(telemetry)
 
     def analyze_url(self, url: str) -> Dict[str, Any]:
         """Analyzes a URL using PhishGuard."""
@@ -727,8 +698,7 @@ class UnifiedThreatPipeline:
             "active_threats_count": active_threats,
             "findings": [url_res]
         }
-        telemetry["llama_prompt"] = generate_llama_executorch_prompt(telemetry)
-        return telemetry
+        return self.process_telemetry(telemetry)
 
     def analyze_network_flow(self, flow_data: Union[pd.DataFrame, Dict[str, Any], str, Path]) -> Dict[str, Any]:
         """Analyzes network flow rows (Mode 1: CSV / DataFrame, Mode 2: PCAP)."""
@@ -753,8 +723,7 @@ class UnifiedThreatPipeline:
             "active_threats_count": active_threats,
             "findings": findings
         }
-        telemetry["llama_prompt"] = generate_llama_executorch_prompt(telemetry)
-        return telemetry
+        return self.process_telemetry(telemetry)
 
     def analyze_unified_event(
         self,
@@ -801,8 +770,7 @@ class UnifiedThreatPipeline:
             "active_threats_count": active_threats,
             "findings": findings
         }
-        telemetry["llama_prompt"] = generate_llama_executorch_prompt(telemetry)
-        return telemetry
+        return self.process_telemetry(telemetry)
 
 
 # =====================================================================
@@ -838,11 +806,15 @@ def run_cli_demo():
             print(f"  [{idx}] Flow {f['flow_id']}: Attack={f['is_attack']} Type={f['attack_type']} Conf={f['confidence']:.4f}")
             print(f"      Top SHAP Evidence: {f['shap_evidence'][:3]}")
 
-    print("\n[+] SCENARIO 3: Downstream Llama 3.2 ExecuTorch Prompt Synthesis")
-    prompt = res1["llama_prompt"]
-    print("--- GENERATED ON-DEVICE LLM PROMPT ---")
-    print(prompt[:600] + "...\n[TRUNCATED FOR DISPLAY]\n---------------------------------------")
-    print("\n[SUCCESS] All 3 edge security modules verified operational.")
+    print("\n[+] SCENARIO 3: Downstream Llama 3.2 ExecuTorch Reasoning Engine Output")
+    print("--- ON-DEVICE PLAIN-ENGLISH ADVISORY ---")
+    advisory = res1.get("llama_advisory", "")
+    print(advisory if advisory else "No advisory generated.")
+    print("---------------------------------------")
+    print("\n--- RAW EXECUTORCH CHAT PROMPT ---")
+    prompt = res1.get("llama_prompt", "")
+    print(prompt[:450] + "...\n[TRUNCATED FOR DISPLAY]\n---------------------------------------")
+    print("\n[SUCCESS] All 3 edge security modules & ExecuTorch Llama 3.2 engine verified operational.")
 
 
 if __name__ == "__main__":

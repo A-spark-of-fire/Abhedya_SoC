@@ -24,3 +24,8 @@ htmlcov/
 .DS_Store
 Thumbs.db
 *.log
+
+# Large model weights (downloaded via scripts/download_llama.sh)
+*.pte
+*.bin
+

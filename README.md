@@ -44,11 +44,20 @@ Abhedya_SoC/
 │       ├── features/contract.py
 │       ├── explain/shap_explainer.py
 │       └── pipeline.py
-├── unified_pipeline.py          # Core pipeline: 3-module + aggregator + Llama prompt gen
-├── app_dashboard.py             # Streamlit Web UI dashboard
-├── app_flask.py                 # Lightweight Flask REST API server
+├── scripts/
+│   ├── download_llama.sh        # Bash model asset downloader from Hugging Face
+│   └── download_llama.py        # Cross-platform Python downloader for PTE & tokenizer
+├── models/
+│   └── llama/                   # Local ExecuTorch Llama 3.2 1B-Instruct model assets
+├── llama_prompt_builder.py      # Llama 3.2 Instruct prompt constructor & grounded fallback
+├── executorch_runner.py         # ExecuTorch 1.5.1 C++ CLI runner wrapper & safety fallback
+├── unified_pipeline.py          # Core pipeline: 3-module + aggregator + ExecuTorch stitching
+├── app_dashboard.py             # Streamlit Web UI dashboard with dedicated AI Reasoning Card
+├── app_flask.py                 # Lightweight Flask REST API server with LLM reasoning toggle
 ├── templates/
-│   └── index.html               # HTML5/CSS3/JS dashboard (served by Flask)
+│   └── index.html               # Cyber-styled HTML5/CSS3/JS dashboard (served by Flask)
+├── tests/
+│   └── test_llama_stitch.py     # End-to-end integration test for Llama reasoning & telemetry
 ├── requirements.txt             # Merged unified dependencies across all 3 modules
 └── data/
     ├── sample_flows.csv         # 25-row curated NIDS test fixture (parity format)
@@ -253,29 +262,82 @@ All module outputs are merged into a single JSON schema ready for downstream **L
 
 ---
 
-## Downstream Llama 3.2 ExecuTorch Integration
+## Local ExecuTorch Llama 3.2 Reasoning Engine Integration
 
-The pipeline generates a fully-formatted **Llama 3.2 1B-Instruct chat prompt** in the ExecuTorch token format, ready to pass directly to the on-device runner:
+The pipeline embeds local, on-device generative AI reasoning using **Meta Llama 3.2 (1B-Instruct 4-bit PTE)** compiled for ExecuTorch 1.5.1 Arm64 XNNPACK. When threat alerts occur, raw technical telemetry from all active edge sensors is synthesized into a plain-English 3-part advisory for non-technical users.
 
+### 1. Download Model Assets
+
+Download the pre-quantized ExecuTorch 4-bit PTE model (~1.0 GB RAM footprint) and tokenizer:
+
+```bash
+# Using bash script (Linux / Raspberry Pi 5):
+chmod +x scripts/download_llama.sh
+./scripts/download_llama.sh
+
+# Or using the cross-platform Python downloader:
+python scripts/download_llama.py
+
+# Download tokenizer only (for testing without full 1.1GB weights):
+python scripts/download_llama.py --tokenizer-only
 ```
+
+Model assets are stored at `models/llama/` (or `$HOME/models_llm/`):
+- `Llama-3.2-1B-Instruct-8da4w-gptq-4k.pte` (4-bit XNNPACK quantized)
+- `tokenizer.json` (Hugging Face / ExecuTorch tokenizer configuration)
+- `xnnpack/config.json`
+
+Target Hugging Face Repository: `experimentalmachines/Llama-3.2-1B-Instruct-ExecuTorch`
+
+### 2. Zero-Shot Prompt Construction (`llama_prompt_builder.py`)
+
+`llama_prompt_builder.py` translates raw telemetry into a zero-shot chat prompt using strict Llama 3.2 special tokens:
+
+```text
 <|begin_of_text|><|start_header_id|>system<|end_header_id|>
-You are the On-Device Security Copilot running on a low-power Edge SoC...
+
+You are the on-device security assistant for Abhedya SoC / Trinetra AI.
+Your job is to translate technical threat telemetry from 3 on-device ML sensors (SMS Scam Detector, PhishGuard URL Analyzer, and Network NIDS) into a simple, plain-English advisory for non-technical users.
+
+STRICT RULES:
+1. Ground your answer strictly in the provided JSON telemetry. Never invent threats not present in the payload.
+2. Output a 3-part structured alert:
+   - ⚠️ **Threat Summary:** What was detected in plain English.
+   - 🔍 **Technical Reason:** Why it is dangerous (explain SHAP metrics, suspicious TLDs, or SMS trigger words simply).
+   - 🛡️ **Recommended Actions:** Exactly 3 clear safety steps the user should take.
 <|eot_id|>
 <|start_header_id|>user<|end_header_id|>
-EDGE SECURITY TELEMETRY EVENT:
-• Status: ALERT
-• Active Threats Count: 2
-...
-<|eot_id|>
-<|start_header_id|>assistant<|end_header_id|>
+
+Review the following on-device threat telemetry and generate the plain-language safety alert:
+
+```json
+{TELEMETRY_JSON}
+```
+<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 ```
 
-Configure the ExecuTorch runner via environment variables:
+### 3. ExecuTorch Engine Runner & Graceful Fallback (`executorch_runner.py`)
+
+- **Class:** `ExecuTorchLlamaEngine`
+- **Inference Parameters:** `temperature=0.2`, `max_new_tokens=256`, 15-second subprocess timeout.
+- **Binary Detection:** Automatically scans PATH, `EXECUTORCH_RUNNER_BIN`, and `$HOME/executorch/` for `llama_main` or `executorch_llama_runner`.
+- **Deterministic Grounded Fallback:** If the C++ runner binary or `.pte` weights are absent (e.g. dev workstations or before compilation on Pi 5), the engine executes `generate_grounded_fallback_advisory()`. This guarantees that dashboards and automated scripts never crash and always receive the exact 3-part structured advisory grounded in telemetry findings.
+
+### 4. Running the Verification Smoke Test
+
+Execute the automated test suite simulating an SMS smishing attack with an embedded phishing link (`http://sbi-kyc.top`) plus a concurrent NIDS DoS attack flow:
+
 ```bash
-export EXECUTORCH_PTE_PATH=/models_llm/xnnpack/Llama-3.2-1B-Instruct-8da4w-gptq-4k.pte
-export EXECUTORCH_TOKENIZER_PATH=/models_llm/tokenizer.json
-export LLM_BACKEND=executorch
+python -m unittest tests/test_llama_stitch.py
 ```
+
+All 6 test cases verify:
+- Llama 3.2 Instruct token prompt formatting
+- Deterministic grounded fallback alert formatting (exact 3 sections, exactly 3 action steps)
+- Multi-vector correlation alert generation & prompt/advisory stitching
+- Clean traffic baseline handling
+- UI toggle disablement behavior
+- ExecuTorch engine fallback safety without binaries
 
 ---
 

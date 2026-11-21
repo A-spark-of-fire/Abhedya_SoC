@@ -97,12 +97,14 @@ def analyze_unified():
     sms_text = data.get("sms_text")
     url = data.get("url")
     flow_data = data.get("flow")
+    enable_llm = data.get("enable_llm_reasoning", True)
 
     flow_df = None
     if flow_data:
         flow_df = pd.DataFrame([flow_data])
 
     pipe = get_pipeline()
+    pipe.enable_llm_reasoning = bool(enable_llm)
     telemetry = pipe.analyze_unified_event(sms_text=sms_text, url=url, flow_df=flow_df)
     return jsonify(telemetry)
 

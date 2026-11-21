@@ -150,6 +150,18 @@ def run_streamlit_app():
     st.sidebar.metric("Avg NIDS Latency", "1.14 ms", "+0.02 ms")
     st.sidebar.metric("RAM Overhead", "148 MB", "Edge Ready")
 
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("Edge LLM Reasoning")
+    enable_executorch = st.sidebar.checkbox(
+        "Enable Local ExecuTorch Llama 3.2 Reasoning (Arm CPU)",
+        value=True,
+        help="Executes 4-bit XNNPACK Llama 3.2 1B-Instruct model on Arm64 CPU or grounded deterministic copilot fallback."
+    )
+    engine_status = pipeline.llama_engine.get_status_info()
+    st.sidebar.caption(f"**LLM Backend:** {engine_status['backend']}")
+    st.sidebar.caption(f"**PTE Model:** {Path(engine_status['model_path']).name if engine_status['model_path'] != 'Missing' else 'Missing'}")
+    st.sidebar.caption(f"**Tokenizer:** {Path(engine_status['tokenizer_path']).name if engine_status['tokenizer_path'] != 'Missing' else 'Missing'}")
+
     # Header
     st.markdown('<div class="main-title">🛡️ Bharat AI-SoC: Unified On-Device Threat Pipeline</div>', unsafe_allow_html=True)
     st.markdown('<div class="sub-title">Real-time edge telemetry, cross-module threat correlation, and mathematical SHAP explainability for Raspberry Pi 5 / Edge SoC.</div>', unsafe_allow_html=True)
@@ -221,6 +233,7 @@ def run_streamlit_app():
                 st.warning("No sample flows CSV found.")
 
         if st.button("🚀 Run Unified Cross-Module Threat Detection", type="primary", use_container_width=True):
+            pipeline.enable_llm_reasoning = enable_executorch
             with st.spinner("Executing Local Multi-Model Inference Pipeline..."):
                 t_start = time.perf_counter()
                 telemetry = pipeline.analyze_unified_event(
@@ -281,35 +294,32 @@ def run_streamlit_app():
                         st.write(f"**Top SHAP:** `{finding.get('shap_evidence', [{}])[0].get('feature', 'N/A')}`")
                         st.caption(f"XGBoost+SHAP Latency: {finding.get('latency_ms')} ms")
 
+            # Dedicated ExecuTorch Llama 3.2 Reasoning Advisory Card
+            st.markdown("### 🤖 Local ExecuTorch Llama 3.2 Security Advisory")
+            advisory_text = telemetry.get("llama_advisory")
+            if advisory_text:
+                is_native = pipeline.llama_engine.is_native_available()
+                backend_badge = "🟢 ExecuTorch Arm64 XNNPACK (Native)" if is_native else "🟡 Deterministic Edge Copilot (Grounded Fallback)"
+                st.caption(f"**Engine:** `{backend_badge}` | Model: `Llama-3.2-1B-Instruct (4-bit)` | Temp: `0.2`")
+                st.markdown(f"""
+                <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid #00E5FF; border-radius: 12px; padding: 20px; margin-top: 10px;">
+                    <div style="white-space: pre-wrap; font-size: 0.95rem; line-height: 1.6; color: #E2E8F0;">
+{advisory_text}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            elif not enable_executorch:
+                st.info("ℹ️ Local ExecuTorch Llama 3.2 Reasoning is disabled in the sidebar.")
+
             # Standardized Telemetry JSON Display
             st.markdown("### Standardized Telemetry Schema (Downstream Output)")
-            clean_telemetry = {k: v for k, v in telemetry.items() if k != "llama_prompt"}
+            clean_telemetry = {k: v for k, v in telemetry.items() if k not in ["llama_prompt", "llama_advisory"]}
             st.json(clean_telemetry)
 
             # Llama 3.2 ExecuTorch Prompt Viewer
-            st.markdown("### Downstream Llama 3.2 ExecuTorch Prompt & Edge Reasoning")
-            with st.expander("View Generated On-Device LLM Prompt", expanded=False):
+            st.markdown("### Downstream Llama 3.2 ExecuTorch Zero-Shot Prompt")
+            with st.expander("View Raw ExecuTorch Llama-3.2 Chat Prompt", expanded=False):
                 st.code(telemetry["llama_prompt"], language="markdown")
-
-            # On-Device Copilot Reasoning Box
-            st.markdown("#### On-Device Copilot Synthesis (Simulated Edge Llama 3.2 1B Response)")
-            if active_threats > 0:
-                copilot_msg = (
-                    "**[CRITICAL THREAT CORRELATION DETECTED]**\n\n"
-                    f"• **Threat Assessment:** A coordinated attack vector is detected consisting of {active_threats} active threats. "
-                    "The incoming SMS message uses smishing tactics with social-engineering triggers, pointing to an unregistered/suspicious "
-                    "domain. Simultaneously, suspicious network packet flow characteristics indicate an active intrusion attempt.\n\n"
-                    "• **Recommended Edge Mitigation:**\n"
-                    "  1. **Network Firewall:** Add source IP to dynamic edge iptables blocklist.\n"
-                    "  2. **Device Protective DNS:** Blacklist extracted malicious domain locally on the resolver.\n"
-                    "  3. **Notification Service:** Surface HIGH-priority alert on the user interface suppressing SMS click-through."
-                )
-                st.success(copilot_msg)
-            else:
-                st.info(
-                    "**[SYSTEM VERDICT: CLEAN]**\n\n"
-                    "All telemetry vectors are within baseline legitimate parameters. No automated edge containment actions required."
-                )
 
     # =========================================================================
     # TAB 2: MODULE 1 - SMS SCAM DETECTOR

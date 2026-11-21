@@ -25,8 +25,11 @@ import numpy as np
 
 # Add workspace directory to path
 WORKSPACE_ROOT = Path(__file__).resolve().parent
-if str(WORKSPACE_ROOT) not in sys.path:
-    sys.path.insert(0, str(WORKSPACE_ROOT))
+MODULES_DIR = WORKSPACE_ROOT / "modules"
+for p in [WORKSPACE_ROOT, MODULES_DIR, MODULES_DIR / "sms_spam_detector", MODULES_DIR / "phishguard", MODULES_DIR / "nids"]:
+    p_str = str(p)
+    if p.exists() and p_str not in sys.path:
+        sys.path.insert(0, p_str)
 
 from unified_pipeline import (
     UnifiedThreatPipeline,
@@ -202,6 +205,8 @@ def run_streamlit_app():
         with col_in2:
             st.write("Simulated Network Flow Event:")
             fixture_csv = WORKSPACE_ROOT / "data" / "sample_flows.csv"
+            if not fixture_csv.exists():
+                fixture_csv = WORKSPACE_ROOT / "modules" / "nids" / "tests" / "fixtures" / "parity_rows.csv"
             if not fixture_csv.exists():
                 fixture_csv = WORKSPACE_ROOT / "nids" / "tests" / "fixtures" / "parity_rows.csv"
 
@@ -414,6 +419,8 @@ def run_streamlit_app():
             st.markdown("##### Mode 1: Pre-extracted Flow CSV Analysis")
             sample_csv_path = WORKSPACE_ROOT / "data" / "sample_flows.csv"
             if not sample_csv_path.exists():
+                sample_csv_path = WORKSPACE_ROOT / "modules" / "nids" / "tests" / "fixtures" / "parity_rows.csv"
+            if not sample_csv_path.exists():
                 sample_csv_path = WORKSPACE_ROOT / "nids" / "tests" / "fixtures" / "parity_rows.csv"
 
             df_curated = pd.read_csv(sample_csv_path, nrows=25)
@@ -479,6 +486,8 @@ def run_streamlit_app():
             if st.button("Start Live Network Packet Stream (5 Flows)"):
                 with st.spinner("Capturing live traffic..."):
                     fixture_csv = WORKSPACE_ROOT / "data" / "sample_flows.csv"
+                    if not fixture_csv.exists():
+                        fixture_csv = WORKSPACE_ROOT / "modules" / "nids" / "tests" / "fixtures" / "parity_rows.csv"
                     if not fixture_csv.exists():
                         fixture_csv = WORKSPACE_ROOT / "nids" / "tests" / "fixtures" / "parity_rows.csv"
                     df_stream = pd.read_csv(fixture_csv, nrows=5)

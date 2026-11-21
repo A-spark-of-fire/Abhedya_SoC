@@ -17,8 +17,11 @@ from flask import Flask, jsonify, render_template, request
 import pandas as pd
 
 WORKSPACE_ROOT = Path(__file__).resolve().parent
-if str(WORKSPACE_ROOT) not in sys.path:
-    sys.path.insert(0, str(WORKSPACE_ROOT))
+MODULES_DIR = WORKSPACE_ROOT / "modules"
+for p in [WORKSPACE_ROOT, MODULES_DIR, MODULES_DIR / "sms_spam_detector", MODULES_DIR / "phishguard", MODULES_DIR / "nids"]:
+    p_str = str(p)
+    if p.exists() and p_str not in sys.path:
+        sys.path.insert(0, p_str)
 
 from unified_pipeline import (
     UnifiedThreatPipeline,
@@ -107,6 +110,8 @@ def analyze_unified():
 @app.route("/api/sample/flows", methods=["GET"])
 def sample_flows():
     sample_csv = WORKSPACE_ROOT / "data" / "sample_flows.csv"
+    if not sample_csv.exists():
+        sample_csv = WORKSPACE_ROOT / "modules" / "nids" / "tests" / "fixtures" / "parity_rows.csv"
     if not sample_csv.exists():
         sample_csv = WORKSPACE_ROOT / "nids" / "tests" / "fixtures" / "parity_rows.csv"
     if sample_csv.exists():

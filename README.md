@@ -21,42 +21,56 @@ This repository integrates three independent edge security modules into a **sing
 
 ```
 Abhedya_SoC/
+├── .gitmodules                  # Git submodule configuration
+├── modules/                     # Structured sub-system security repositories
+│   ├── __init__.py              # Python module wiring & sys.path configuration
+│   ├── sms_spam_detector/       # Submodule: A-spark-of-fire/SMS_Spam_Detector
+│   │   ├── sms_classifier_model.pkl
+│   │   ├── tfidf_word_vectorizer.pkl
+│   │   ├── tfidf_char_vectorizer.pkl
+│   │   ├── sms_decision_threshold.pkl
+│   │   └── train_combined_sms.py
+│   ├── phishguard/              # Submodule: SwastikSaha/PhishGuard
+│   │   ├── phishguard_artifacts/
+│   │   │   ├── phishguard_mlp.pth
+│   │   │   ├── preprocessor.joblib
+│   │   │   └── model_config.json
+│   │   ├── live_classifier.py
+│   │   └── mlp_model.py
+│   └── nids/                    # Submodule: Abhil4sh777/nids
+│       ├── models/
+│       │   ├── detector.joblib  # Binary XGBoost detector (tau=0.3545)
+│       │   └── classifier.joblib# 13-class XGBoost classifier
+│       ├── features/contract.py
+│       ├── explain/shap_explainer.py
+│       └── pipeline.py
 ├── unified_pipeline.py          # Core pipeline: 3-module + aggregator + Llama prompt gen
 ├── app_dashboard.py             # Streamlit Web UI dashboard
 ├── app_flask.py                 # Lightweight Flask REST API server
 ├── templates/
 │   └── index.html               # HTML5/CSS3/JS dashboard (served by Flask)
-├── requirements.txt
-├── data/
-│   ├── sample_flows.csv         # 25-row curated NIDS test fixture (parity format)
-│   └── sample_traffic.pcap      # Synthetic Ethernet/TCP capture for PCAP replay demo
-├── SMS_Spam_Detector/           # Git submodule / cloned repo
-│   ├── sms_classifier_model.pkl
-│   ├── tfidf_word_vectorizer.pkl
-│   ├── tfidf_char_vectorizer.pkl
-│   ├── sms_decision_threshold.pkl
-│   └── train_combined_sms.py
-├── PhishGuard/                  # Git submodule / cloned repo
-│   ├── phishguard_artifacts/
-│   │   ├── phishguard_mlp.pth
-│   │   ├── preprocessor.joblib
-│   │   └── model_config.json
-│   ├── live_classifier.py
-│   └── mlp_model.py
-└── nids/                        # Git submodule / cloned repo
-    ├── models/
-    │   ├── detector.joblib      # Binary XGBoost detector (tau=0.3545)
-    │   └── classifier.joblib    # 13-class XGBoost classifier
-    ├── features/contract.py
-    ├── explain/shap_explainer.py
-    └── pipeline.py
+├── requirements.txt             # Merged unified dependencies across all 3 modules
+└── data/
+    ├── sample_flows.csv         # 25-row curated NIDS test fixture (parity format)
+    └── sample_traffic.pcap      # Synthetic Ethernet/TCP capture for PCAP replay demo
 ```
 
 ---
 
 ## Quick Start
 
-### 1. Install Dependencies
+### 1. Clone & Initialize Submodules
+
+```bash
+# Clone with submodules
+git clone --recursive <repo-url>
+cd Abhedya_SoC
+
+# Or if repository is already cloned:
+git submodule update --init --recursive
+```
+
+### 2. Install Dependencies
 
 ```bash
 # System packages (Linux / RPi5)

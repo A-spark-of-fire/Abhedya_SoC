@@ -48,16 +48,20 @@ import scipy.sparse as sp
 import torch
 import torch.nn as nn
 
-# Base paths
+# Base paths & Submodule resolution
 WORKSPACE_ROOT = Path(__file__).resolve().parent
-SMS_DIR = WORKSPACE_ROOT / "SMS_Spam_Detector"
-PHISH_DIR = WORKSPACE_ROOT / "PhishGuard"
-NIDS_DIR = WORKSPACE_ROOT / "nids"
+MODULES_DIR = WORKSPACE_ROOT / "modules"
 
-# Add sub-repos to sys.path
-for p in [str(SMS_DIR), str(PHISH_DIR), str(NIDS_DIR)]:
-    if p not in sys.path and os.path.exists(p):
-        sys.path.insert(0, p)
+# Resolve submodule directories inside modules/ (with fallback to root)
+SMS_DIR = MODULES_DIR / "sms_spam_detector" if (MODULES_DIR / "sms_spam_detector").exists() else WORKSPACE_ROOT / "SMS_Spam_Detector"
+PHISH_DIR = MODULES_DIR / "phishguard" if (MODULES_DIR / "phishguard").exists() else WORKSPACE_ROOT / "PhishGuard"
+NIDS_DIR = MODULES_DIR / "nids" if (MODULES_DIR / "nids").exists() else WORKSPACE_ROOT / "nids"
+
+# Configure sys.path so submodules and internal packages resolve seamlessly
+for p in [WORKSPACE_ROOT, MODULES_DIR, SMS_DIR, PHISH_DIR, NIDS_DIR]:
+    p_str = str(p)
+    if p.exists() and p_str not in sys.path:
+        sys.path.insert(0, p_str)
 
 logger = logging.getLogger("unified_pipeline")
 if not logger.handlers:
@@ -825,6 +829,8 @@ def run_cli_demo():
 
     print("\n[+] SCENARIO 2: Edge Network Flow Intrusion (SSH-Patator with SHAP Evidence)")
     fixture_csv = NIDS_DIR / "tests" / "fixtures" / "parity_rows.csv"
+    if not fixture_csv.exists():
+        fixture_csv = WORKSPACE_ROOT / "data" / "sample_flows.csv"
     if fixture_csv.exists():
         df_sample = pd.read_csv(fixture_csv, nrows=2)
         res2 = pipeline.analyze_network_flow(df_sample)

@@ -1,33 +1,56 @@
+# ==============================================================================
 # Bharat AI-SoC Challenge — Problem Statement 3: On-Device Edge Security
-# Unified Multi-Model Threat Detection Pipeline — Python Dependencies
+# Unified Multi-Model Threat Detection Pipeline — Master Requirements
 #
-# Target platform: Linux / Raspberry Pi 5 (Python 3.11+ recommended)
-# Install: pip install -r requirements.txt
+# Target Platform: Linux / Raspberry Pi 5 / Bharat AI-SoC (Python 3.11+)
+# Installation: pip install -r requirements.txt
+# ==============================================================================
 
-# ─── Core ML / Inference ──────────────────────────────────────────────────────
-scikit-learn>=1.9.0
-joblib>=1.4.0
+# ─── 1. CORE NUMERICAL & ML BACKBONE ─────────────────────────────────────────
 numpy>=1.26.0
-scipy>=1.12.0
 pandas>=2.1.0
+scipy>=1.12.0
+scikit-learn>=1.4.0
+joblib>=1.4.0
 
-# ─── Module 1: SMS Scam Detector ─────────────────────────────────────────────
-# (uses scikit-learn & numpy, already listed above)
+# ─── 2. MODULE 1: SMS SCAM DETECTOR (A-spark-of-fire/SMS_Spam_Detector) ─────
+# Sub-millisecond SMS text classifier (25,049 dims, stacking ensemble)
+# ONNX runtime support for edge hardware acceleration
+onnx>=1.15.0
+onnxruntime>=1.16.0
+skl2onnx>=1.16.0
 
-# ─── Module 2: PhishGuard URL Detector ───────────────────────────────────────
-torch>=2.0.0           # CPU-only on edge; install torch+cpu wheel on RPi5
-
-# ─── Module 3: Network NIDS ───────────────────────────────────────────────────
-xgboost>=2.0.0         # CPU device=0 / tree_method=hist
-shap>=0.44.0
-
-# ─── Web Interfaces ───────────────────────────────────────────────────────────
-streamlit>=1.30.0      # Primary Dashboard (recommended)
-flask>=3.0.0           # Lightweight Flask+HTML fallback
-
-# ─── Feature Extraction Utilities ────────────────────────────────────────────
-tldextract>=3.6.0      # Optional: improved TLD extraction for PhishGuard
-
-# ─── Raspberry Pi 5 / Edge CPU-only PyTorch ──────────────────────────────────
-# If installing on ARM64 (RPi5), use the CPU wheel:
+# ─── 3. MODULE 2: PHISHGUARD URL DETECTOR (SwastikSaha/PhishGuard) ───────────
+# Deep URL structural & domain analyzer with PyTorch MLP (375k parameters)
+# NOTE: On Raspberry Pi 5 (ARM64), install CPU-only wheel:
 #   pip install torch --index-url https://download.pytorch.org/whl/cpu
+torch>=2.0.0
+tldextract>=3.6.0
+
+# ─── 4. MODULE 3: NETWORK NIDS (Abhil4sh777/nids) ────────────────────────────
+# 13-class XGBoost flow intrusion detector with mathematical SHAP attributions
+xgboost>=2.0.0
+shap>=0.44.0
+requests>=2.31.0
+
+# ─── 5. NIDS PACKET CAPTURE & PCAP REPLAY (MODES 2 & 3) ──────────────────────
+# NTLFlowLyzer runtime dependencies for raw PCAP flow feature extraction
+dpkt>=1.9.8
+multipledispatch>=1.0.0
+
+# ─── 6. DOWNSTREAM LLM EXECUTORCH CO-PILOT ───────────────────────────────────
+# Tokenizer support for Meta Llama 3.2 1B on-device ExecuTorch execution
+tokenizers>=0.21.0
+
+# ─── 7. LOCAL WEB DASHBOARDS & API INTERFACES ────────────────────────────────
+# Streamlit primary interactive dashboard
+streamlit>=1.30.0
+altair>=5.0.0
+
+# Lightweight Flask server + HTML5/CSS3/JS UI for headless / low-RAM setups
+flask>=3.0.0
+werkzeug>=3.0.0
+jinja2>=3.1.0
+
+# ─── 8. TESTING & BENCHMARKING ────────────────────────────────────────────────
+pytest>=8.0.0

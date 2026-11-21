@@ -1,0 +1,12 @@
+[submodule "modules/sms_spam_detector"]
+	path = modules/sms_spam_detector
+	url = https://github.com/A-spark-of-fire/SMS_Spam_Detector.git
+	ignore = dirty
+[submodule "modules/phishguard"]
+	path = modules/phishguard
+	url = https://github.com/SwastikSaha/PhishGuard.git
+	ignore = dirty
+[submodule "modules/nids"]
+	path = modules/nids
+	url = https://github.com/Abhil4sh777/nids.git
+	ignore = dirty

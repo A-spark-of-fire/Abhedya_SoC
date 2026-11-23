@@ -96,13 +96,147 @@
     </div>
 
     <!-- Navigation Tabs -->
-    <div class="flex space-x-2 border-b border-gray-800">
-      <button onclick="switchTab('tab-p1')" id="btn-tab-p1" class="tab-btn px-4 py-2.5 font-semibold text-sm border-b-2 border-cyan-400 text-cyan-400 flex items-center gap-2">
+    <div class="flex space-x-2 border-b border-gray-800 overflow-x-auto">
+      <button onclick="switchTab('tab-dual')" id="btn-tab-dual" class="tab-btn px-4 py-2.5 font-semibold text-sm border-b-2 border-cyan-400 text-cyan-400 flex items-center gap-2">
+        <span>🔄 Approach 2: Multi-Threaded Dual Stream (RPi 5)</span>
+      </button>
+      <button onclick="switchTab('tab-p1')" id="btn-tab-p1" class="tab-btn px-4 py-2.5 font-semibold text-sm border-b-2 border-transparent text-gray-400 hover:text-gray-200 flex items-center gap-2">
         <span>🛡️ Pipeline 1: Live Network ➔ NIDS ➔ Llama Prompt 1 ➔ Output</span>
       </button>
       <button onclick="switchTab('tab-p2')" id="btn-tab-p2" class="tab-btn px-4 py-2.5 font-semibold text-sm border-b-2 border-transparent text-gray-400 hover:text-gray-200 flex items-center gap-2">
         <span>📱 Pipeline 2: User Input ➔ SMS ➔ Extract URL ➔ PhishGuard ➔ Llama Prompt 2 ➔ Output</span>
       </button>
+    </div>
+
+        <!-- ========================================================================= -->
+    <!-- TAB 0: APPROACH 2 DUAL REAL-TIME TELEMETRY STREAM & CONTROLS                -->
+    <!-- ========================================================================= -->
+    <div id="tab-dual" class="tab-content space-y-6">
+      
+      <!-- Engine Lifecycle Controls -->
+      <div class="glass-card rounded-xl p-6">
+        <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
+          <div>
+            <h2 class="text-lg font-bold text-cyan-400 leading-tight">Multi-Threaded Dual Engine Lifecycle</h2>
+            <p class="text-gray-400 text-xs">Concurrent background threads (NIDS + SMS Queue) with global mutex (<code>llm_lock = threading.Lock()</code>).</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="startEngine()" id="btn-start-engine" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs rounded-lg transition flex items-center gap-1.5 shadow-md">
+              <span>▶️</span> Start Engine
+            </button>
+            <button onclick="stopEngine()" id="btn-stop-engine" class="px-4 py-2 bg-red-600 hover:bg-red-500 text-white font-semibold text-xs rounded-lg transition flex items-center gap-1.5 shadow-md">
+              <span>⏹️</span> Stop Engine
+            </button>
+            <button onclick="refreshEngineStatus()" class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-cyan-400 font-semibold text-xs rounded-lg border border-gray-700 transition flex items-center gap-1.5">
+              <span>🔄</span> Refresh
+            </button>
+          </div>
+        </div>
+
+        <!-- Telemetry Summary Metrics -->
+        <div class="grid grid-cols-2 md:grid-cols-6 gap-3 text-center mono">
+          <div class="bg-gray-900/90 p-3 rounded-lg border border-gray-800">
+            <div class="text-xs text-gray-400">Engine State</div>
+            <div id="stat-engine-state" class="text-sm font-bold text-cyan-400 mt-1">STOPPED</div>
+          </div>
+          <div class="bg-gray-900/90 p-3 rounded-lg border border-gray-800">
+            <div class="text-xs text-gray-400">Thread 1 (NIDS)</div>
+            <div id="stat-nids-state" class="text-sm font-bold text-emerald-400 mt-1">IDLE</div>
+          </div>
+          <div class="bg-gray-900/90 p-3 rounded-lg border border-gray-800">
+            <div class="text-xs text-gray-400">Thread 2 (SMS)</div>
+            <div id="stat-sms-state" class="text-sm font-bold text-emerald-400 mt-1">IDLE</div>
+          </div>
+          <div class="bg-gray-900/90 p-3 rounded-lg border border-gray-800">
+            <div class="text-xs text-gray-400">LLM Mutex Lock</div>
+            <div id="stat-llm-lock" class="text-sm font-bold text-emerald-400 mt-1">FREE</div>
+          </div>
+          <div class="bg-gray-900/90 p-3 rounded-lg border border-gray-800">
+            <div class="text-xs text-gray-400">Threats Detected</div>
+            <div id="stat-threats-count" class="text-sm font-bold text-red-400 mt-1">0</div>
+          </div>
+          <div class="bg-gray-900/90 p-3 rounded-lg border border-gray-800">
+            <div class="text-xs text-gray-400">LLM Invocations</div>
+            <div id="stat-llm-count" class="text-sm font-bold text-cyan-400 mt-1">0</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- DUAL TELEMETRY CARDS (LIVE NETWORK STREAM + SMISHING STREAM) -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        
+        <!-- CARD 1: LIVE NETWORK STREAM (THREAD 1 - NIDS) -->
+        <div class="glass-card rounded-xl p-5 border border-cyan-800/40 flex flex-col">
+          <div class="flex items-center justify-between pb-3 border-b border-gray-800 mb-4">
+            <div class="flex items-center space-x-2">
+              <span class="text-xl">🌐</span>
+              <div>
+                <h3 class="text-sm font-bold text-cyan-300">Live Network Stream (Thread 1)</h3>
+                <p class="text-xs text-gray-400">Continuous 60s Tumbling Windows • XGBoost NIDS + SHAP</p>
+              </div>
+            </div>
+            <span class="px-2 py-0.5 text-xs bg-gray-900 text-cyan-400 border border-cyan-800 rounded-md mono">
+              tau = 0.3545
+            </span>
+          </div>
+
+          <div class="text-xs text-gray-300 mb-3 space-y-1">
+            <p>• <span class="text-emerald-400 font-semibold">Benign Traffic (P &lt; 0.3545):</span> Instantaneous sub-2ms edge verdict (0 LLM compute).</p>
+            <p>• <span class="text-red-400 font-semibold">Attack Traffic (P &ge; 0.3545):</span> Top-5 SHAP + <code>with llm_lock:</code> Prompt 1 advisory.</p>
+          </div>
+
+          <div id="nids-stream-container" class="space-y-2 overflow-y-auto max-h-80 pr-1 flex-1">
+            <div class="text-xs text-gray-500 italic p-3 text-center bg-gray-950/60 rounded-lg border border-gray-800/80">
+              Start engine to begin continuous tumbling network capture windows...
+            </div>
+          </div>
+        </div>
+
+        <!-- CARD 2: SMISHING & PHISHING STREAM (THREAD 2 - ASYNC QUEUE) -->
+        <div class="glass-card rounded-xl p-5 border border-purple-800/40 flex flex-col">
+          <div class="flex items-center justify-between pb-3 border-b border-gray-800 mb-4">
+            <div class="flex items-center space-x-2">
+              <span class="text-xl">📱</span>
+              <div>
+                <h3 class="text-sm font-bold text-purple-300">Smishing & Phishing Stream (Thread 2)</h3>
+                <p class="text-xs text-gray-400">Async Event-Driven Queue • 25,049-Dim Stacking + PyTorch MLP</p>
+              </div>
+            </div>
+            <span id="badge-sms-queue-depth" class="px-2 py-0.5 text-xs bg-gray-900 text-purple-400 border border-purple-800 rounded-md mono">
+              Queue: 0
+            </span>
+          </div>
+
+          <!-- Quick Ingestion Input -->
+          <div class="bg-gray-950/80 p-3 rounded-lg border border-gray-800 mb-3">
+            <div class="text-xs font-semibold text-gray-300 mb-1">Submit Incoming SMS / Webhook Payload:</div>
+            <div class="flex gap-2">
+              <input type="text" id="stream-sms-input" class="w-full bg-gray-900 border border-gray-700 rounded-lg p-2 text-xs mono focus:border-purple-400 focus:outline-none" value="URGENT: Your SBI account locked. Update KYC: http://sbi-kyc.top" />
+              <button onclick="submitStreamSms()" class="px-3 py-2 bg-purple-700 hover:bg-purple-600 text-white font-semibold text-xs rounded-lg transition whitespace-nowrap">
+                📤 Submit
+              </button>
+            </div>
+          </div>
+
+          <div id="sms-stream-container" class="space-y-2 overflow-y-auto max-h-80 pr-1 flex-1">
+            <div class="text-xs text-gray-500 italic p-3 text-center bg-gray-950/60 rounded-lg border border-gray-800/80">
+              Awaiting incoming SMS / URL events in async queue listener...
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Combined Event Log -->
+      <div class="glass-card rounded-xl p-5">
+        <div class="flex items-center justify-between mb-3 border-b border-gray-800 pb-2">
+          <h3 class="text-sm font-bold text-gray-300">Thread-Safe Event Log & Status Aggregator</h3>
+          <span class="text-xs text-gray-500 mono">Capped at 500 in-memory events</span>
+        </div>
+        <div id="combined-event-table" class="space-y-1.5 max-h-64 overflow-y-auto text-xs mono">
+          <div class="text-gray-500 italic">No events logged yet. Start engine and submit events to view live telemetry.</div>
+        </div>
+      </div>
     </div>
 
     <!-- ========================================================================= -->
@@ -828,6 +962,189 @@
       delete cleanJson.llama_advisory;
       document.getElementById('p2-telemetry-json').textContent = JSON.stringify(cleanJson, null, 2);
     }
+
+    // -------------------------------------------------------------------------
+    // APPROACH 2: MULTI-THREADED DUAL ENGINE CONTROLS
+    // -------------------------------------------------------------------------
+    async function startEngine() {
+      try {
+        const res = await fetch('/api/engine/start', { method: 'POST' });
+        const data = await res.json();
+        refreshEngineStatus();
+      } catch(e) { console.error('Start error', e); }
+    }
+
+    async function stopEngine() {
+      try {
+        const res = await fetch('/api/engine/stop', { method: 'POST' });
+        const data = await res.json();
+        refreshEngineStatus();
+      } catch(e) { console.error('Stop error', e); }
+    }
+
+    async function submitStreamSms() {
+      const msg = document.getElementById('stream-sms-input').value;
+      if (!msg) return;
+      try {
+        const res = await fetch('/api/engine/submit/sms', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ message: msg })
+        });
+        const data = await res.json();
+        if (data.error) {
+          alert(data.error);
+        } else {
+          setTimeout(refreshEngineStatus, 1500);
+        }
+      } catch(e) { console.error('Submit error', e); }
+    }
+
+    async function refreshEngineStatus() {
+      try {
+        const res = await fetch('/api/engine/status');
+        const s = await res.json();
+
+        document.getElementById('stat-engine-state').textContent = s.engine_state || 'STOPPED';
+        document.getElementById('stat-engine-state').className = s.engine_state === 'RUNNING' 
+          ? 'text-sm font-bold text-emerald-400 mt-1' 
+          : 'text-sm font-bold text-gray-400 mt-1';
+
+        document.getElementById('stat-nids-state').textContent = s.nids_thread || 'IDLE';
+        document.getElementById('stat-sms-state').textContent = s.sms_thread || 'IDLE';
+        document.getElementById('stat-threats-count').textContent = s.total_threats_detected || 0;
+        document.getElementById('stat-llm-count').textContent = s.llm_invocations || 0;
+
+        const isLocked = s.llm_lock_locked;
+        document.getElementById('stat-llm-lock').textContent = isLocked ? 'LOCKED' : 'FREE';
+        document.getElementById('stat-llm-lock').className = isLocked 
+          ? 'text-sm font-bold text-amber-400 mt-1' 
+          : 'text-sm font-bold text-emerald-400 mt-1';
+
+        document.getElementById('badge-sms-queue-depth').textContent = 'Queue: ' + (s.queue_depth || 0);
+
+        const evRes = await fetch('/api/engine/events?last_n=30');
+        const evData = await evRes.json();
+        const events = evData.events || [];
+
+        renderDualStreams(events);
+        renderCombinedTable(events);
+      } catch(e) {
+        console.error('Refresh error', e);
+      }
+    }
+
+    function renderDualStreams(events) {
+      const nidsContainer = document.getElementById('nids-stream-container');
+      const smsContainer = document.getElementById('sms-stream-container');
+
+      const nidsEvents = events.filter(e => e.thread === 'nids').slice(-15);
+      const smsEvents = events.filter(e => e.thread === 'sms').slice(-15);
+
+      if (nidsEvents.length > 0) {
+        nidsContainer.innerHTML = '';
+        nidsEvents.reverse().forEach(ev => {
+          const el = document.createElement('div');
+          const ts = (ev.logged_at || '').substring(11, 19);
+          if (ev.type === 'ATTACK') {
+            el.className = 'p-3 rounded-lg bg-red-950/60 border border-red-800 text-red-200 text-xs mono';
+            el.innerHTML = `
+              <div class="flex items-center justify-between font-bold text-red-400 mb-1">
+                <span>🚨 ATTACK: ${ev.attack_type || 'Intrusion'}</span>
+                <span>[${ts}]</span>
+              </div>
+              <div>Flow: ${ev.flow_id || 'N/A'} • Prob: ${((ev.attack_probability||0)*100).toFixed(1)}%</div>
+              <div class="text-gray-400">Target: ${ev.dst_ip || 'host'}:${ev.dst_port || '0'} • Latency: ${ev.verdict_latency_ms || '0'}ms</div>
+              ${ev.advisory ? `<div class="mt-2 p-2 bg-black/50 rounded text-cyan-200 text-xs">${ev.advisory.substring(0, 140)}...</div>` : ''}
+            `;
+          } else if (ev.type === 'BENIGN') {
+            el.className = 'p-2.5 rounded-lg bg-emerald-950/40 border border-emerald-900 text-emerald-200 text-xs mono';
+            el.innerHTML = `
+              <div class="flex items-center justify-between">
+                <span>✅ BENIGN (Flow ${ev.flow_id || 'ID'})</span>
+                <span class="text-gray-400">[${ts}]</span>
+              </div>
+              <div class="text-gray-400 text-xs mt-0.5">Prob: ${((ev.attack_probability||0)*100).toFixed(2)}% (tau=0.3545) • Latency: ${ev.verdict_latency_ms || '<2'}ms (0 LLM overhead)</div>
+            `;
+          } else {
+            el.className = 'p-2 rounded-lg bg-gray-900 border border-gray-800 text-gray-400 text-xs mono';
+            el.innerHTML = `<span class="text-gray-500">[${ts}]</span> ⏸️ ${ev.message || 'Window idle'}`;
+          }
+          nidsContainer.appendChild(el);
+        });
+      }
+
+      if (smsEvents.length > 0) {
+        smsContainer.innerHTML = '';
+        smsEvents.reverse().forEach(ev => {
+          const el = document.createElement('div');
+          const ts = (ev.logged_at || '').substring(11, 19);
+          if (ev.type === 'THREAT') {
+            el.className = 'p-3 rounded-lg bg-red-950/60 border border-red-800 text-red-200 text-xs mono';
+            el.innerHTML = `
+              <div class="flex items-center justify-between font-bold text-red-400 mb-1">
+                <span>🚨 THREAT DETECTED</span>
+                <span>[${ts}]</span>
+              </div>
+              <div class="truncate text-gray-300 mb-1">Payload: "${ev.content_preview || ''}"</div>
+              <div class="text-gray-400">Vectors: ${ev.findings_count || 1} • Latency: ${ev.processing_latency_ms || '0'}ms • LLM: ${ev.llm_invoked ? 'Active' : 'None'}</div>
+              ${ev.advisory ? `<div class="mt-2 p-2 bg-black/50 rounded text-cyan-200 text-xs">${ev.advisory.substring(0, 140)}...</div>` : ''}
+            `;
+          } else {
+            el.className = 'p-2.5 rounded-lg bg-emerald-950/40 border border-emerald-900 text-emerald-200 text-xs mono';
+            el.innerHTML = `
+              <div class="flex items-center justify-between">
+                <span>✅ CLEAN CONTENT</span>
+                <span class="text-gray-400">[${ts}]</span>
+              </div>
+              <div class="truncate text-gray-400 text-xs mt-0.5">Payload: "${ev.content_preview || ''}" • Latency: ${ev.processing_latency_ms || '<1'}ms (0 LLM overhead)</div>
+            `;
+          }
+          smsContainer.appendChild(el);
+        });
+      }
+    }
+
+    function renderCombinedTable(events) {
+      const tableDiv = document.getElementById('combined-event-table');
+      if (!events || events.length === 0) return;
+
+      tableDiv.innerHTML = '';
+      events.slice(-20).reverse().forEach(ev => {
+        const row = document.createElement('div');
+        const ts = (ev.logged_at || '').substring(11, 19);
+        const th = (ev.thread || '?').toUpperCase();
+        const ty = ev.type || '?';
+
+        if (ty === 'ATTACK' || ty === 'THREAT') {
+          row.className = 'p-2 rounded bg-red-950/40 border border-red-900/60 text-red-300 flex items-center justify-between';
+          row.innerHTML = `
+            <span>[${ts}] <strong>${th}</strong> &bull; 🚨 ${ty}: ${ev.attack_type || ev.content_preview || ''}</span>
+            <span class="text-xs text-amber-400">LLM Mutex: ${ev.llm_invoked ? 'ACQUIRED' : 'NONE'}</span>
+          `;
+        } else if (ty === 'BENIGN' || ty === 'CLEAN') {
+          row.className = 'p-1.5 rounded bg-emerald-950/30 border border-emerald-900/40 text-emerald-300 flex items-center justify-between';
+          row.innerHTML = `
+            <span>[${ts}] <strong>${th}</strong> &bull; ✅ ${ty} (${ev.flow_id || ev.content_preview || ''})</span>
+            <span class="text-xs text-gray-400">0 LLM Compute &bull; ${ev.verdict_latency_ms || ev.processing_latency_ms || '<2'}ms</span>
+          `;
+        } else {
+          row.className = 'p-1 rounded bg-gray-900 text-gray-400 flex items-center justify-between';
+          row.innerHTML = `<span>[${ts}] <strong>${th}</strong> &bull; ⏸️ ${ev.message || ty}</span>`;
+        }
+        tableDiv.appendChild(row);
+      });
+    }
+
+    setInterval(() => {
+      const dualTab = document.getElementById('tab-dual');
+      if (dualTab && !dualTab.classList.contains('hidden')) {
+        refreshEngineStatus();
+      }
+    }, 4000);
+
+    setTimeout(refreshEngineStatus, 1000);
+
   </script>
 </body>
 </html>

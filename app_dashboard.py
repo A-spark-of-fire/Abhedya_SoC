@@ -37,6 +37,8 @@ importlib.reload(unified_pipeline)
 
 from unified_pipeline import (
     UnifiedThreatPipeline,
+    UnifiedMultiThreadedEngine,
+    llm_lock,
     extract_urls_from_text,
     normalize_sms_text,
     generate_llama_executorch_prompt,
@@ -196,12 +198,141 @@ def run_streamlit_app():
     st.markdown('<div class="main-title">🛡️ Bharat AI-SoC: Dual-Pipeline Threat Defense</div>', unsafe_allow_html=True)
     st.markdown('<div class="sub-title">Real-time edge telemetry, dual-pipeline threat detection, and mathematical SHAP explainability for Raspberry Pi 5 / Edge SoC.</div>', unsafe_allow_html=True)
 
+
+    # Initialize Multi-Threaded Engine in session state
+    if "mt_engine" not in st.session_state:
+        st.session_state.mt_engine = UnifiedMultiThreadedEngine(pipeline=pipeline, capture_window_seconds=10)
+    mt_engine: UnifiedMultiThreadedEngine = st.session_state.mt_engine
+
     # Main Tabs
-    tab_p1, tab_p2, tab_specs = st.tabs([
+    tab_dual, tab_p1, tab_p2, tab_specs = st.tabs([
+        "🔄 Dual Real-Time Telemetry Stream (Approach 2)",
         "🛡️ Pipeline 1: Live Network -> NIDS -> Llama Prompt 1 -> Output",
         "📱 Pipeline 2: User Input -> SMS -> Extract URL -> PhishGuard -> Llama Prompt 2 -> Output",
         "⚡ Edge SoC Architecture"
     ])
+
+    # =========================================================================
+    # TAB 0: APPROACH 2 DUAL REAL-TIME TELEMETRY STREAM & CONTROLS
+    # =========================================================================
+    with tab_dual:
+        st.subheader("Approach 2: Multi-Threaded Dual Engine (RPi 5 Architecture)")
+        st.markdown("""
+        **Pipeline 1 (Live Network NIDS)** and **Pipeline 2 (Smishing & Phishing)** run concurrently on dedicated worker threads.
+        A global threading mutex (`llm_lock = threading.Lock()`) serializes access to the local ExecuTorch Llama 3.2 engine,
+        guaranteeing zero RAM overload (~1.2 GB limit) and instant sub-2ms evaluation for benign flows.
+        """)
+
+        # Engine Lifecycle Controls
+        c_ctrl1, c_ctrl2, c_ctrl3, c_ctrl4 = st.columns([1, 1, 1, 2])
+        with c_ctrl1:
+            if st.button("▶️ Start Engine", type="primary", disabled=mt_engine.is_running, use_container_width=True):
+                mt_engine.start()
+                st.success("Dual engine started.")
+                st.rerun()
+        with c_ctrl2:
+            if st.button("⏹️ Stop Engine", disabled=not mt_engine.is_running, use_container_width=True):
+                mt_engine.stop()
+                st.info("Dual engine stopped.")
+                st.rerun()
+        with c_ctrl3:
+            if st.button("🔄 Refresh Stream", use_container_width=True):
+                st.rerun()
+        with c_ctrl4:
+            e_status = mt_engine.get_status()
+            state_color = "🟢 RUNNING" if e_status.get("engine_state") == "RUNNING" else "🔴 STOPPED"
+            st.markdown(f"**State:** `{state_color}` | **Mutex Lock:** `{'LOCKED' if e_status.get('llm_lock_locked') else 'FREE'}` | **Queue Depth:** `{e_status.get('queue_depth', 0)}`")
+
+        # Telemetry Aggregator Summary
+        status = mt_engine.get_status()
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Thread 1 (NIDS)", status.get("nids_thread", "N/A"))
+        m2.metric("Thread 2 (SMS Queue)", status.get("sms_thread", "N/A"))
+        m3.metric("Total Threats Detected", status.get("total_threats_detected", 0))
+        m4.metric("LLM Invocations (Locked)", status.get("llm_invocations", 0))
+
+        st.markdown("---")
+
+        # Dual Telemetry Stream Cards (Side by Side)
+        col_stream_nids, col_stream_sms = st.columns(2)
+
+        with col_stream_nids:
+            st.markdown("### 🌐 Live Network Stream (Thread 1)")
+            st.caption("Continuous 60s tumbling capture windows • XGBoost (tau=0.3545) + SHAP")
+            st.markdown("""
+            - **Benign Traffic (`P < 0.3545`):** Sub-2ms instant verdict, 0 LLM compute.
+            - **Attack Traffic (`P >= 0.3545`):** Top-5 SHAP attributions + `with llm_lock:` Prompt 1 advisory.
+            """)
+
+            events = mt_engine.get_event_log(last_n=20)
+            nids_events = [e for e in events if e.get("thread") == "nids"]
+
+            if nids_events:
+                for ev in reversed(nids_events[-6:]):
+                    ev_type = ev.get("type", "UNKNOWN")
+                    ts = ev.get("logged_at", "")[11:19]
+                    if ev_type == "ATTACK":
+                        st.error(f"[{ts}] 🚨 ATTACK: {ev.get('attack_type')} (Prob: {ev.get('attack_probability')*100:.1f}%) | Latency: {ev.get('verdict_latency_ms')} ms")
+                        if ev.get("advisory"):
+                            with st.expander("View ExecuTorch Llama Prompt 1 Advisory", expanded=False):
+                                st.write(ev.get("advisory"))
+                    elif ev_type == "BENIGN":
+                        st.success(f"[{ts}] ✅ BENIGN (Flow {ev.get('flow_id')}) • Prob: {ev.get('attack_probability')*100:.2f}% • Sub-2ms verdict ({ev.get('verdict_latency_ms')} ms) • 0 LLM overhead")
+                    else:
+                        st.info(f"[{ts}] ⏸️ {ev.get('message', 'Tumbling window idle')}")
+            else:
+                st.info("No NIDS capture events recorded yet. Start engine to begin monitoring.")
+
+        with col_stream_sms:
+            st.markdown("### 📱 Smishing & Phishing Stream (Thread 2)")
+            st.caption("Event-Driven Queue Listener • 25,049-Dim Stacking + PhishGuard MLP")
+            st.markdown("""
+            - **Clean Content:** Sub-1ms instant log, 0 LLM compute overhead.
+            - **Threat Detected:** Auto link cross-check + `with llm_lock:` Prompt 2 safety alert.
+            """)
+
+            # Submission Form to Thread 2 Queue
+            sms_test_val = st.text_input("Submit SMS/Webhook payload to Thread 2:", value="URGENT: Your SBI account locked. Update KYC: http://sbi-kyc.top", key="stream_sms_in")
+            if st.button("📤 Submit to Processing Queue", disabled=not mt_engine.is_running):
+                mt_engine.submit_sms(sms_test_val)
+                st.success("Submitted to Thread 2 async queue.")
+                time.sleep(1.0)
+                st.rerun()
+
+            sms_events = [e for e in events if e.get("thread") == "sms"]
+            if sms_events:
+                for ev in reversed(sms_events[-6:]):
+                    ev_type = ev.get("type", "UNKNOWN")
+                    ts = ev.get("logged_at", "")[11:19]
+                    if ev_type == "THREAT":
+                        st.error(f"[{ts}] 🚨 THREAT: {ev.get('content_preview')} • Vectors: {ev.get('findings_count')} • Latency: {ev.get('processing_latency_ms')} ms")
+                        if ev.get("advisory"):
+                            with st.expander("View ExecuTorch Llama Prompt 2 Safety Alert", expanded=False):
+                                st.write(ev.get("advisory"))
+                    else:
+                        st.success(f"[{ts}] ✅ CLEAN: {ev.get('content_preview')} • Sub-1ms verdict ({ev.get('processing_latency_ms')} ms) • 0 LLM overhead")
+            else:
+                st.info("Awaiting incoming SMS/URL events in async queue listener.")
+
+        st.markdown("---")
+        st.markdown("### Combined Event Stream Log")
+        all_events = mt_engine.get_event_log(last_n=15)
+        if all_events:
+            event_df = pd.DataFrame([
+                {
+                    "Time": e.get("logged_at", "")[11:19],
+                    "Thread": e.get("thread", "").upper(),
+                    "Type": e.get("type"),
+                    "Verdict": e.get("status", "N/A"),
+                    "LLM Mutex": "ACQUIRED" if e.get("llm_invoked") else "BYPASSED (0 overhead)",
+                    "Latency (ms)": e.get("verdict_latency_ms") or e.get("processing_latency_ms") or 0.0,
+                }
+                for e in reversed(all_events)
+            ])
+            st.dataframe(event_df, use_container_width=True)
+        else:
+            st.caption("No events recorded yet.")
+
 
     # =========================================================================
     # TAB 1: PIPELINE 1 (Live Network -> NIDS -> Llama Prompt 1 -> Output)

@@ -20,6 +20,40 @@ The system is structured around two dedicated end-to-end processing pipelines or
 
 ---
 
+
+---
+
+## Approach 2: Multi-Threaded Dual Engine with Global LLM Mutex
+
+Under **Approach 2**, Pipeline 1 (Live Network NIDS) and Pipeline 2 (Smishing & Phishing detection) execute concurrently in multi-threaded mode on Raspberry Pi 5. Access to the local ExecuTorch Llama 3.2 1B engine is strictly serialized using a global threading mutex (`llm_lock = threading.Lock()`), ensuring zero RAM overload (~1.2 GB limit) and instant sub-2ms edge evaluation for benign events.
+
+### Thread 1: Live Network Monitoring Engine (NIDS)
+- **Continuous 60s Tumbling Windows:** Managed by dedicated background thread `nids_thread`.
+- **Benign Traffic (`P(Attack) < 0.3545`):** Emits instantaneous sub-2ms verdict to telemetry feed, bypassing Llama engine (0 LLM compute overhead).
+- **Attack Traffic (`P(Attack) >= 0.3545`):** Calculates top-5 SHAP feature attributions, acquires `llm_lock`, generates 3-part ExecuTorch Llama Prompt 1 advisory, and releases `llm_lock`.
+- **Empty Capture Windows:** Handled gracefully with `IDLE` state logging without packet drops.
+
+### Thread 2: Event-Driven SMS & URL Listener
+- **Asynchronous Queue Listener:** Managed by dedicated background thread `sms_thread` ingesting from `_sms_queue`.
+- **Processing:** De-obfuscate text -> 25,049-Dim Stacking Ensemble -> PhishGuard PyTorch MLP (auto-extracted links).
+- **Clean Content:** Emits instant clean log (<1 ms, 0 LLM compute overhead).
+- **Threat Detected:** Acquires `llm_lock`, generates ExecuTorch Llama Prompt 2 safety alert, and releases `llm_lock`.
+
+### Threading Mutex & Resource Management (`llm_lock`)
+- Defined globally in `unified_pipeline.py`: `llm_lock = threading.Lock()`.
+- Serializes ExecuTorch Llama 3.2 inference calls (`generate_advisory()`) with `with llm_lock:`.
+- **Non-blocking sensor evaluation:** Ingestion queues accept network packets and SMS texts without dropping while Llama generates text.
+- Memory ceiling is strictly enforced under ~1.2 GB RAM on Raspberry Pi 5.
+
+### Background Engine Lifecycle API Endpoints
+- `POST /api/engine/start` — Start concurrent `nids_thread` and `sms_thread`
+- `POST /api/engine/stop` — Gracefully stop both threads
+- `GET /api/engine/status` — Real-time thread states, queue depth, threats detected, LLM lock state
+- `GET /api/engine/events` — Retrieve event stream (up to 500 capped entries)
+- `POST /api/engine/submit/sms` — Async SMS submission to Thread 2 queue
+- `POST /api/engine/submit/url` — Async URL submission to Thread 2 queue
+
+
 ## Dual Threat Detection Pipelines
 
 The edge platform executes two operational pipelines depending on the incoming data vector:

@@ -320,3 +320,8 @@ def clean_llm_response(raw_output: str) -> str:
     for tok in stop_tokens:
         text = text.replace(tok, "")
     return text.strip()
+
+
+# Backward compatibility and Approach 2 aliases
+build_prompt_1_nids = build_llama_prompt_pipeline_1
+build_prompt_2_smishing = build_llama_prompt_pipeline_2

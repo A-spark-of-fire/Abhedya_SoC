@@ -26,6 +26,8 @@ for p in [WORKSPACE_ROOT, MODULES_DIR, MODULES_DIR / "sms_spam_detector", MODULE
 
 from unified_pipeline import (
     UnifiedThreatPipeline,
+    UnifiedMultiThreadedEngine,
+    llm_lock,
     extract_urls_from_text,
     normalize_sms_text,
     generate_llama_executorch_prompt,
@@ -43,6 +45,16 @@ def get_pipeline() -> UnifiedThreatPipeline:
     if pipeline is None:
         pipeline = UnifiedThreatPipeline()
     return pipeline
+
+# Global engine instance for Approach 2 multi-threaded dual engine
+engine: Optional[UnifiedMultiThreadedEngine] = None
+
+def get_engine() -> UnifiedMultiThreadedEngine:
+    global engine
+    if engine is None:
+        pipe = get_pipeline()
+        engine = UnifiedMultiThreadedEngine(pipeline=pipe)
+    return engine
 
 
 @app.route("/")
@@ -175,6 +187,110 @@ def run_pipeline_2_endpoint():
         "findings": telemetry["findings"]
     }
     return jsonify(response)
+
+
+
+
+# =====================================================================
+# APPROACH 2: MULTI-THREADED DUAL ENGINE LIFECYCLE API CONTROLS
+# =====================================================================
+
+@app.route("/api/engine/start", methods=["POST"])
+def engine_start():
+    eng = get_engine()
+    if eng.is_running:
+        return jsonify({
+            "status": "ALREADY_RUNNING",
+            "message": "Multi-threaded dual engine is already active.",
+            "engine_state": "RUNNING"
+        }), 200
+
+    eng.start()
+    return jsonify({
+        "status": "STARTED",
+        "message": "Approach 2 Multi-Threaded Dual Engine successfully started (Thread 1 NIDS + Thread 2 SMS).",
+        "engine_state": "RUNNING"
+    }), 200
+
+
+@app.route("/api/engine/stop", methods=["POST"])
+def engine_stop():
+    global engine
+    if engine is None or not engine.is_running:
+        return jsonify({
+            "status": "NOT_RUNNING",
+            "message": "Multi-threaded dual engine is not currently running.",
+            "engine_state": "STOPPED"
+        }), 200
+
+    engine.stop()
+    return jsonify({
+        "status": "STOPPED",
+        "message": "Multi-threaded dual engine stopped gracefully.",
+        "engine_state": "STOPPED"
+    }), 200
+
+
+@app.route("/api/engine/status", methods=["GET"])
+def engine_status():
+    eng = get_engine()
+    status = eng.get_status()
+    return jsonify(status)
+
+
+@app.route("/api/engine/events", methods=["GET"])
+def engine_events():
+    last_n = request.args.get("last_n", 50, type=int)
+    eng = get_engine()
+    events = eng.get_event_log(last_n=last_n)
+    return jsonify({
+        "count": len(events),
+        "events": events
+    })
+
+
+@app.route("/api/engine/submit/sms", methods=["POST"])
+def engine_submit_sms():
+    data = request.get_json(force=True) if request.data else {}
+    message = data.get("message", "")
+    if not message:
+        return jsonify({"error": "Missing 'message' field in payload."}), 400
+
+    eng = get_engine()
+    if not eng.is_running:
+        return jsonify({
+            "error": "Engine not running. Start engine first via POST /api/engine/start",
+            "engine_state": "STOPPED"
+        }), 400
+
+    eng.submit_sms(message)
+    return jsonify({
+        "status": "QUEUED",
+        "message": "SMS successfully submitted to Thread 2 processing queue.",
+        "queue_depth": eng.get_status().get("queue_depth", 0)
+    }), 202
+
+
+@app.route("/api/engine/submit/url", methods=["POST"])
+def engine_submit_url():
+    data = request.get_json(force=True) if request.data else {}
+    url = data.get("url", "")
+    if not url:
+        return jsonify({"error": "Missing 'url' field in payload."}), 400
+
+    eng = get_engine()
+    if not eng.is_running:
+        return jsonify({
+            "error": "Engine not running. Start engine first via POST /api/engine/start",
+            "engine_state": "STOPPED"
+        }), 400
+
+    eng.submit_url(url)
+    return jsonify({
+        "status": "QUEUED",
+        "message": "URL successfully submitted to Thread 2 processing queue.",
+        "queue_depth": eng.get_status().get("queue_depth", 0)
+    }), 202
 
 
 if __name__ == "__main__":

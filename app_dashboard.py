@@ -31,13 +31,20 @@ for p in [WORKSPACE_ROOT, MODULES_DIR, MODULES_DIR / "sms_spam_detector", MODULE
     if p.exists() and p_str not in sys.path:
         sys.path.insert(0, p_str)
 
+import importlib
+import unified_pipeline
+importlib.reload(unified_pipeline)
+
 from unified_pipeline import (
     UnifiedThreatPipeline,
     extract_urls_from_text,
     normalize_sms_text,
     generate_llama_executorch_prompt,
     DOMAIN_KEYWORDS,
-    SUSPICIOUS_URL_KEYWORDS
+    SUSPICIOUS_URL_KEYWORDS,
+    capture_live_network,
+    extract_flows_from_pcap,
+    get_dumpcap_info
 )
 
 # Check if running under Streamlit
@@ -125,7 +132,10 @@ def run_streamlit_app():
     # Initialize Pipeline in session state to cache models across runs
     @st.cache_resource(show_spinner=False)
     def load_pipeline():
-        return UnifiedThreatPipeline()
+        import importlib
+        import unified_pipeline
+        importlib.reload(unified_pipeline)
+        return unified_pipeline.UnifiedThreatPipeline()
 
     with st.spinner("Initializing On-Device AI Models (SMS Ensemble, PyTorch MLP, XGBoost NIDS)..."):
         pipeline = load_pipeline()
@@ -135,6 +145,15 @@ def run_streamlit_app():
     st.sidebar.title("Bharat AI-SoC Telemetry")
     st.sidebar.markdown("**Target Hardware:** Raspberry Pi 5 / SoC")
     st.sidebar.markdown("**Compute Units:** 4x Cortex-A76 + Local NPU")
+
+    if st.sidebar.button("🔄 Clear Cache & Reload Models", use_container_width=True):
+        st.cache_resource.clear()
+        st.rerun()
+
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("Operational Pipelines")
+    st.sidebar.markdown("🛡️ **Pipeline 1:** Live Network ➔ NIDS ➔ Llama Prompt 1 ➔ Output")
+    st.sidebar.markdown("📱 **Pipeline 2:** User Input ➔ SMS ➔ URL ➔ PhishGuard ➔ Llama Prompt 2 ➔ Output")
 
     st.sidebar.markdown("---")
     st.sidebar.subheader("Active Edge Models")
@@ -151,6 +170,17 @@ def run_streamlit_app():
     st.sidebar.metric("RAM Overhead", "148 MB", "Edge Ready")
 
     st.sidebar.markdown("---")
+    st.sidebar.subheader("Live Capture Engine")
+    dumpcap_info = get_dumpcap_info()
+    if dumpcap_info["available"]:
+        st.sidebar.caption(f"🟢 `dumpcap` ready: `{dumpcap_info['path']}`")
+        if dumpcap_info.get("version"):
+            st.sidebar.caption(dumpcap_info["version"])
+    else:
+        st.sidebar.error("🔴 Live capture unavailable: dumpcap not found")
+        st.sidebar.caption("Install with `sudo apt install wireshark-common`, then grant capture permissions (see README).")
+
+    st.sidebar.markdown("---")
     st.sidebar.subheader("Edge LLM Reasoning")
     enable_executorch = st.sidebar.checkbox(
         "Enable Local ExecuTorch Llama 3.2 Reasoning (Arm CPU)",
@@ -163,144 +193,410 @@ def run_streamlit_app():
     st.sidebar.caption(f"**Tokenizer:** {Path(engine_status['tokenizer_path']).name if engine_status['tokenizer_path'] != 'Missing' else 'Missing'}")
 
     # Header
-    st.markdown('<div class="main-title">🛡️ Bharat AI-SoC: Unified On-Device Threat Pipeline</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-title">Real-time edge telemetry, cross-module threat correlation, and mathematical SHAP explainability for Raspberry Pi 5 / Edge SoC.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-title">🛡️ Bharat AI-SoC: Dual-Pipeline Threat Defense</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-title">Real-time edge telemetry, dual-pipeline threat detection, and mathematical SHAP explainability for Raspberry Pi 5 / Edge SoC.</div>', unsafe_allow_html=True)
 
     # Main Tabs
-    tab_unified, tab_sms, tab_url, tab_nids, tab_specs = st.tabs([
-        "🌐 Unified Threat Correlator",
-        "📱 Module 1: SMS Scam Detector",
-        "🔗 Module 2: Phishing URL Detector",
-        "🛡️ Module 3: Network NIDS & SHAP",
+    tab_p1, tab_p2, tab_specs = st.tabs([
+        "🛡️ Pipeline 1: Live Network -> NIDS -> Llama Prompt 1 -> Output",
+        "📱 Pipeline 2: User Input -> SMS -> Extract URL -> PhishGuard -> Llama Prompt 2 -> Output",
         "⚡ Edge SoC Architecture"
     ])
 
     # =========================================================================
-    # TAB 1: UNIFIED THREAT CORRELATOR
+    # TAB 1: PIPELINE 1 (Live Network -> NIDS -> Llama Prompt 1 -> Output)
     # =========================================================================
-    with tab_unified:
-        st.subheader("Cross-Module Automation & Aggregated Telemetry")
-        st.write("Simulate or analyze multi-vector attacks combining SMS smishing, embedded links, and simultaneous network traffic intrusions.")
+    with tab_p1:
+        st.subheader("Pipeline 1: Live Network Intrusion Detection & Explainability")
+        st.markdown("""
+        **Operational Contract:**  
+        `Live Network (dumpcap / PCAP Window) ──> Network NIDS (Two-Stage XGBoost + SHAP)`  
+        **Per-Flow Routing Policy:**  
+        • **If Benign:** Do NOT pass to LLaMA ──> **Model Output** (Sub-2ms NIDS classifier verdict, zero LLM compute)  
+        • **If Attack:** Pass to LLaMA ──> **Llama Prompt 1** (`Input: NIDS: ~ NIDS telemetry output (for attack)`) ──> **LLaMA Output Advisory**  
+        • **Continuous Tumbling Lifecycle:** Window size is 1 minute (60s). When started, automatically updates with each new 1-min window and automatically discards the last 1-min window.
+        """)
+
+        if "p1_monitoring" not in st.session_state:
+            st.session_state.p1_monitoring = False
+        if "p1_window_count" not in st.session_state:
+            st.session_state.p1_window_count = 0
+        if "p1_current_result" not in st.session_state:
+            st.session_state.p1_current_result = None
+        if "p1_last_discarded_ts" not in st.session_state:
+            st.session_state.p1_last_discarded_ts = None
+
+        # Flow Ingestion Controls (Real Network Workflows)
+        col_p1_mode, col_p1_input = st.columns([1, 2])
+        with col_p1_mode:
+            p1_ingest_mode = st.radio(
+                "Ingestion Source:",
+                ["📡 Live Interface Capture (dumpcap)", "📁 Real PCAP / PCAPNG File Replay"],
+                index=0
+            )
+
+        uploaded_pcap = None
+        live_interface = "any"
+        capture_duration = 60
+
+        with col_p1_input:
+            if p1_ingest_mode == "📡 Live Interface Capture (dumpcap)":
+                st.info("Direct socket capture via `dumpcap` on Linux network interfaces in **1-minute (60s)** windows.")
+                detected_ifaces = getattr(unified_pipeline, "get_available_interfaces", lambda: ["any", "wlo1", "lo", "eno1", "eth0"])()
+                col_if1, col_if2 = st.columns(2)
+                with col_if1:
+                    live_interface = st.selectbox("Select Network Interface:", detected_ifaces, index=0)
+                with col_if2:
+                    capture_duration = st.slider("Window Size (seconds):", min_value=1, max_value=120, value=60, help="Default: 60s (1 min)")
+                inject_probe = st.checkbox(
+                    "🌐 Generate probe traffic during capture (ensures live flows)",
+                    value=True,
+                    help="Sends a benign test probe during capture so line-rate packets are actively captured and evaluated by NIDS on idle devices."
+                )
+                st.caption(f"Window duration: **{capture_duration}s** (~{capture_duration//60 or 1} min). Command: `dumpcap -i {live_interface} -a duration:{capture_duration}`.")
+            else:
+                sample_pcap = WORKSPACE_ROOT / "data" / "sample_traffic.pcap"
+                uploaded_pcap = st.file_uploader("Upload custom .pcap / .pcapng file:", type=["pcap", "pcapng"])
+                pcap_to_run = uploaded_pcap if uploaded_pcap else sample_pcap
+                st.caption(f"PCAP target: `{pcap_to_run.name if hasattr(pcap_to_run, 'name') else Path(pcap_to_run).name}` (Parsed via DPkt packet flow engine)")
+
+        col_btn1, col_btn2, col_btn3 = st.columns([2, 1, 2])
+        with col_btn1:
+            btn_start = st.button("▶️ Start 1-Min Window Monitoring", type="primary", use_container_width=True, disabled=st.session_state.p1_monitoring)
+        with col_btn2:
+            btn_stop = st.button("⏹️ Stop Monitoring", use_container_width=True, disabled=not st.session_state.p1_monitoring)
+        with col_btn3:
+            btn_single = st.button("⚡ Execute Single 1-Min Window", use_container_width=True, disabled=st.session_state.p1_monitoring)
+
+        if btn_start:
+            st.session_state.p1_monitoring = True
+            st.rerun()
+
+        if btn_stop:
+            st.session_state.p1_monitoring = False
+            st.rerun()
+
+        should_capture = st.session_state.p1_monitoring or btn_single
+        if should_capture:
+            pipeline.enable_llm_reasoning = enable_executorch
+            st.session_state.p1_window_count += 1
+
+            # AUTOMATICALLY DISCARD LAST 1-MIN WINDOW
+            if st.session_state.p1_current_result is not None:
+                st.session_state.p1_last_discarded_ts = st.session_state.p1_current_result.get("timestamp")
+                st.session_state.p1_current_result = None  # Previous window discarded
+
+            t_start = time.perf_counter()
+            with st.spinner(f"Ingesting & evaluating 1-min window #{st.session_state.p1_window_count} on '{live_interface}' ({capture_duration}s)..."):
+                try:
+                    if p1_ingest_mode == "📡 Live Interface Capture (dumpcap)":
+                        try:
+                            p1_res = pipeline.run_pipeline_1(live_interface=live_interface, duration_seconds=capture_duration, probe=inject_probe)
+                        except TypeError:
+                            # Fallback for cached instances from previous runtime sessions
+                            df_live = capture_live_network(interface=live_interface, duration_seconds=capture_duration)
+                            p1_res = pipeline.run_pipeline_1(df_live)
+                    elif uploaded_pcap:
+                        temp_pcap = WORKSPACE_ROOT / "data" / "uploaded_temp.pcap"
+                        with open(temp_pcap, "wb") as f:
+                            f.write(uploaded_pcap.read())
+                        p1_res = pipeline.run_pipeline_1(temp_pcap)
+                    else:
+                        sample_pcap = WORKSPACE_ROOT / "data" / "sample_traffic.pcap"
+                        p1_res = pipeline.run_pipeline_1(sample_pcap)
+                except Exception as exc:
+                    is_live = p1_ingest_mode == "📡 Live Interface Capture (dumpcap)"
+                    p1_res = {
+                        "status": "CAPTURE_ERROR" if is_live else "ERROR",
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "active_threats_count": 0,
+                        "total_flows_count": 0,
+                        "findings": [],
+                        "passed_to_llama": False,
+                        "output_type": "no_output",
+                        "llama_prompt": None,
+                        "llama_advisory": None,
+                        "message": str(exc),
+                        "capture_error": str(exc),
+                        "output": {"verdict": "ERROR", "summary": str(exc)},
+                    }
+                p1_res["elapsed_ms"] = (time.perf_counter() - t_start) * 1000.0
+                st.session_state.p1_current_result = p1_res
+
+        # Render Pipeline 1 Results
+        if st.session_state.p1_current_result is not None:
+            p1_res = st.session_state.p1_current_result
+            elapsed_ms = p1_res.get("elapsed_ms", 0.0)
+
+            # Continuous Monitoring & Window Discard Status Indicator
+            if st.session_state.p1_monitoring:
+                st.success(
+                    f"🟢 **Continuous 1-Min Monitoring Active (Window #{st.session_state.p1_window_count}):** "
+                    f"Updated with new 1-min window (`{p1_res.get('timestamp')}`). "
+                    f"Last 1-min window (`{st.session_state.p1_last_discarded_ts or 'Initial'}`) was automatically discarded."
+                )
+            elif st.session_state.p1_last_discarded_ts:
+                st.info(
+                    f"⏹️ **Monitoring Stopped (Window #{st.session_state.p1_window_count}):** "
+                    f"Displaying current 1-min window. Prior window (`{st.session_state.p1_last_discarded_ts}`) was automatically discarded."
+                )
+            p1_findings = p1_res.get("findings", [])
+            p1_status = p1_res.get("status", "CLEAN")
+            p1_message = p1_res.get("message") or p1_res.get("capture_error") or ""
+
+            if not p1_findings:
+                # Never fabricate an "idle-window" benign flow.  An empty
+                # capture window has no NIDS verdict and must be reported as
+                # such, with actionable capture diagnostics.
+                if p1_status in ("CAPTURE_ERROR", "ERROR"):
+                    st.error(f"**Pipeline 1 capture failed.** {p1_message or 'The capture engine could not start.'}")
+                else:
+                    st.warning(
+                        f"**Pipeline 1 idle: no network flows captured.** "
+                        f"{p1_message or 'No IP flows were observed in this capture window.'}"
+                    )
+                if p1_ingest_mode == "📡 Live Interface Capture (dumpcap)":
+                    st.caption(f"Capture window: `{capture_duration}s` on interface `{live_interface}`.")
+                st.info(
+                    "**Live capture troubleshooting**\n\n"
+                    "1. Install the capture tools: `sudo apt install wireshark-common` (the package that provides `dumpcap`).\n"
+                    "2. Grant capture rights: `sudo dpkg-reconfigure wireshark-common` (choose **Yes**), then "
+                    "`sudo usermod -aG wireshark $USER` and log out/in.\n"
+                    "3. Verify interfaces with `dumpcap -D`, then select a busy interface (or `any`).\n"
+                    "4. Generate traffic during the capture window (browse, ping, or open a socket).\n\n"
+                    "An empty window is reported as **IDLE** — no benign verdict, 0% probability, or "
+                    "0.00 ms latency is invented for it."
+                )
+                with st.expander("Standardized Telemetry JSON Schema", expanded=False):
+                    st.json(p1_res)
+            else:
+                p1_finding = p1_findings[0]
+                is_attack = p1_finding.get("is_attack", False)
+                attack_type = p1_finding.get("attack_type", "Benign")
+                attack_prob = p1_finding.get("attack_probability", 0.0)
+                passed_to_llama = p1_finding.get("passed_to_llama", is_attack)
+                output_type = p1_finding.get("output_type", "llama_output" if is_attack else "model_output")
+
+                if is_attack:
+                    st.markdown(f"""
+                        <div class="status-card-alert">
+                            <h3 style="margin:0; color:#EF4444;">🚨 PIPELINE 1 ALERT: NETWORK INTRUSION DETECTED</h3>
+                            <p style="margin:4px 0 0 0;">Two-stage XGBoost flagged active attack: <strong>{attack_type}</strong> (Probability: {attack_prob*100:.1f}%, tau={p1_finding.get('decision_threshold', 0.3545)*100:.1f}%). Passed to LLaMA ➔ LLaMA Output generated. Elapsed: {elapsed_ms:.2f} ms.</p>
+                        </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.markdown(f"""
+                        <div class="status-card-clean">
+                            <h3 style="margin:0; color:#10B981;">✅ PIPELINE 1 CLEAN: BENIGN NETWORK TRAFFIC</h3>
+                            <p style="margin:4px 0 0 0;">NIDS detector verified flow within benign baseline bounds. <strong>LLaMA reasoning bypassed ➔ Pure Model Output</strong>. Elapsed: {elapsed_ms:.2f} ms.</p>
+                        </div>
+                    """, unsafe_allow_html=True)
+
+                # Window Overview if multiple flows were evaluated
+                if len(p1_findings) > 1:
+                    st.markdown(f"#### Ingested Flow Window ({len(p1_findings)} Flows Analyzed)")
+                    summary_data = []
+                    for idx, f in enumerate(p1_findings, 1):
+                        summary_data.append({
+                            "Flow": f.get("flow_id", f"Flow-{idx}"),
+                            "Endpoint": f"{f.get('src_ip')}:{f.get('src_port')} ➔ {f.get('dst_ip')}:{f.get('dst_port')}",
+                            "Protocol": f.get("protocol", "TCP"),
+                            "Verdict": "ATTACK" if f.get("is_attack") else "BENIGN",
+                            "Type": f.get("attack_type", "Benign"),
+                            "Routing": "🔴 [LLAMA OUTPUT]" if f.get("passed_to_llama") else "🟢 [MODEL OUTPUT]",
+                            "Latency (ms)": f.get("latency_ms", 0.0)
+                        })
+                    st.dataframe(pd.DataFrame(summary_data), use_container_width=True, height=180)
+
+                # Step 1: Flow Info & Step 2: NIDS Verdict
+                c_flow, c_verdict, c_prob, c_lat = st.columns(4)
+                c_flow.metric("Ingested Flow", f"{p1_finding.get('flow_id', 'Live Flow')}", f"{p1_finding.get('protocol')}")
+                c_verdict.metric("NIDS Verdict", "ATTACK" if is_attack else "BENIGN", attack_type)
+                c_prob.metric("Attack Probability", f"{attack_prob*100:.1f}%", f"tau: {p1_finding.get('decision_threshold', 0.3545)*100:.1f}%")
+                c_lat.metric("NIDS Latency", f"{p1_finding.get('latency_ms', 0):.2f} ms", "Sub-2ms")
+
+                # Step 2b: SHAP Forensic Evidence
+                st.markdown("#### Top-5 SHAP Mathematical Evidence (Feature Attributions)")
+                shap_evidence = p1_finding.get("shap_evidence", [])
+                if shap_evidence:
+                    shap_df = pd.DataFrame(shap_evidence)
+                    col_chart, col_tbl = st.columns([1, 1])
+                    with col_chart:
+                        chart = alt.Chart(shap_df).mark_bar().encode(
+                            x=alt.X('shap_value:Q', title='SHAP Attribution (+ Attack, - Benign)'),
+                            y=alt.Y('feature:N', sort='-x', title='Flow Metric'),
+                            color=alt.condition(
+                                alt.datum.shap_value > 0,
+                                alt.value("#EF4444"),  # Red for attack
+                                alt.value("#3B82F6")   # Blue for benign
+                            ),
+                            tooltip=['feature', 'value', 'shap_value']
+                        ).properties(height=200)
+                        st.altair_chart(chart, use_container_width=True)
+                    with col_tbl:
+                        st.dataframe(shap_df, use_container_width=True, height=200)
+                else:
+                    st.caption("Flow verified benign: All 121 features within baseline bounds. No abnormal SHAP attribution drivers.")
+
+                # Step 3: Llama Prompt 1 (Input: NIDS Telemetry Output for Attack)
+                st.markdown("#### Step 3: Llama Prompt 1 Constructor")
+                if is_attack:
+                    st.caption("Input: `NIDS: ~ NIDS telemetry output (for attack)` formatted with Llama 3.2 Instruct tokens.")
+                    with st.expander("View Constructed Llama Prompt 1 (Attack Flow)", expanded=False):
+                        st.code(p1_finding.get("llama_prompt") or p1_res.get("llama_prompt", ""), language="markdown")
+                else:
+                    st.info("ℹ️ **LLaMA Prompt 1 Bypassed:** Flow is benign. Prompt is not constructed as traffic is routed directly to Model Output.")
+
+                # Step 4: Output Security Advisory / Model Output
+                st.markdown("#### Step 4: Output Verdict & Advisory")
+                if is_attack:
+                    advisory_text = p1_finding.get("llama_advisory") or p1_res.get("llama_advisory")
+                    if advisory_text:
+                        is_native = pipeline.llama_engine.is_native_available()
+                        backend_badge = "🟢 ExecuTorch Arm64 XNNPACK (Native)" if is_native else "🟡 Deterministic Edge Copilot (Grounded Fallback)"
+                        st.caption(f"**Engine:** `{backend_badge}` | Model: `Llama-3.2-1B-Instruct (4-bit)` | **Output Type: LLaMA Output**")
+                        st.markdown(f"""
+                        <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid #EF4444; border-radius: 12px; padding: 20px; margin-top: 10px;">
+                            <div style="white-space: pre-wrap; font-size: 0.95rem; line-height: 1.6; color: #E2E8F0;">
+{advisory_text}
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    elif not enable_executorch:
+                        st.info("ℹ️ Local ExecuTorch Llama 3.2 Reasoning is disabled in the sidebar.")
+                else:
+                    # Pure Model Output for Benign Flows
+                    st.caption("⚡ **Routing Policy:** Benign flow verified by on-device NIDS model. **Output Type: Model Output** (LLaMA reasoning bypassed to conserve edge CPU & power).")
+                    model_out = p1_finding.get("output", {})
+                    st.markdown(f"""
+                    <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid #10B981; border-radius: 12px; padding: 18px; margin-top: 10px;">
+                        <h4 style="margin: 0 0 8px 0; color: #10B981;">🛡️ NIDS Pure Model Output</h4>
+                        <p style="margin: 0; font-size: 0.92rem; color: #E2E8F0;">
+                            • <strong>Verdict:</strong> {model_out.get('verdict', 'Benign')}<br>
+                            • <strong>Attack Classification:</strong> {model_out.get('attack_type', 'Benign')}<br>
+                            • <strong>Confidence:</strong> {model_out.get('confidence', 1.0) * 100:.2f}%<br>
+                            • <strong>Attack Probability:</strong> {model_out.get('attack_probability', 0.0) * 100:.4f}% (Threshold: {model_out.get('decision_threshold', 0.3545) * 100:.2f}%)<br>
+                            • <strong>NIDS Latency:</strong> {model_out.get('latency_ms', 0.0):.2f} ms<br>
+                            • <strong>LLM Overhead:</strong> 0.0 ms (Zero tokens consumed)
+                        </p>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                # Step 5: Telemetry JSON Schema
+                with st.expander("Standardized Telemetry JSON Schema", expanded=False):
+                    clean_telemetry = {k: v for k, v in p1_res.items() if k not in ["llama_prompt", "llama_advisory"]}
+                    st.json(clean_telemetry)
+
+        # Automated continuous update loop for 1-minute windows
+        if st.session_state.p1_monitoring:
+            time.sleep(0.5)
+            st.rerun()
+
+    # =========================================================================
+    # TAB 2: PIPELINE 2 (User Input -> SMS -> Extract URL -> PhishGuard -> Prompt 2 -> Output)
+    # =========================================================================
+    with tab_p2:
+        st.subheader("Pipeline 2: User Smishing & Phishing Detection")
+        st.markdown("""
+        **Operational Contract:**  
+        `User Input (SMS) ──> SMS Scam Detector ──> Extract URL ──> PhishGuard URL Detector ──> Llama Prompt 2 (Input: ~ SMS Scam Detector telemetry output ~ PhishGuard URL Detector telemetry output) ──> ExecuTorch Output Advisory`
+        """)
 
         # Presets selector
-        preset = st.selectbox(
-            "Select Attack Simulation Scenario:",
-            [
-                "Scenario A: Multi-Vector Bank KYC Smish + Extracted Phishing URL + SSH Brute-Force",
-                "Scenario B: Urgent Lottery Scam with Obfuscated URL & DoS Slowhttptest Traffic",
-                "Scenario C: Clean Legitimate SMS & Benign Network Flow"
-            ]
+        col_p2_btn1, col_p2_btn2, col_p2_btn3, col_p2_btn4 = st.columns(4)
+        p2_default_sms = ""
+        if col_p2_btn1.button("🏦 Bank KYC Smish + URL"):
+            p2_default_sms = "URGENT: Your SBI account has been locked. Update KYC immediately: http://sbi-banking-verify-update.xyz/login.php?user=victim"
+        elif col_p2_btn2.button("🎰 Lottery Prize Scam"):
+            p2_default_sms = "Congratulations! You won ₹50,000 cash prize. Claim free reward now: https://bit.ly/claim-prize-now"
+        elif col_p2_btn3.button("🔤 Obfuscated Leetspeak"):
+            p2_default_sms = "Your b@nk a.c.c.o.u.n.t is b l o c k e d. Click k-y-c link to update up1: http://bank-update.top"
+        elif col_p2_btn4.button("💬 Clean Message"):
+            p2_default_sms = "Hey, are you free to study for the exam tomorrow afternoon?"
+
+        p2_input_sms = st.text_area(
+            "Enter or Inspect User Input SMS Message:",
+            value=p2_default_sms if p2_default_sms else "URGENT: Your SBI account has been locked. Update KYC immediately: http://sbi-banking-verify-update.xyz/login.php?user=victim",
+            height=90
         )
-
-        col_in1, col_in2 = st.columns([1, 1])
-
-        default_sms = ""
-        default_flow_idx = 0
-        if "Scenario A" in preset:
-            default_sms = "URGENT: Your SBI account has been locked. Update KYC immediately: http://sbi-banking-verify-update.xyz/login.php?user=victim"
-            default_flow_idx = 0  # SSH-Patator
-        elif "Scenario B" in preset:
-            default_sms = "Congratulations! You won ₹50,000 cash prize. Claim free reward now: https://bit.ly/claim-prize-now"
-            default_flow_idx = 3  # DoS_Slowhttptest
+        p2_detected_urls = extract_urls_from_text(p2_input_sms)
+        if p2_detected_urls:
+            st.info(f"🔗 **Auto-Link Extractor Active:** Detected {len(p2_detected_urls)} embedded link(s): `{', '.join(p2_detected_urls)}` ➔ Forwarding to PhishGuard.")
         else:
-            default_sms = "Hey, let's meet at 1pm for lunch today at the cafeteria."
-            default_flow_idx = 2  # Benign
+            st.caption("No embedded web links detected in message.")
 
-        with col_in1:
-            input_sms = st.text_area("Incoming SMS Message:", value=default_sms, height=100)
-            auto_links = extract_urls_from_text(input_sms)
-            if auto_links:
-                st.info(f"🔗 **Auto-Link Extractor Active:** Detected {len(auto_links)} embedded link(s): `{', '.join(auto_links)}` -> Forwarding to PhishGuard.")
-            else:
-                st.caption("No embedded links detected in SMS.")
-
-        with col_in2:
-            st.write("Simulated Network Flow Event:")
-            fixture_csv = WORKSPACE_ROOT / "data" / "sample_flows.csv"
-            if not fixture_csv.exists():
-                fixture_csv = WORKSPACE_ROOT / "modules" / "nids" / "tests" / "fixtures" / "parity_rows.csv"
-            if not fixture_csv.exists():
-                fixture_csv = WORKSPACE_ROOT / "nids" / "tests" / "fixtures" / "parity_rows.csv"
-
-            if fixture_csv.exists():
-                df_flows = pd.read_csv(fixture_csv, nrows=10)
-                flow_options = [f"Flow #{i}: {df_flows['flow_id'].iloc[i]} ({df_flows['src_ip'].iloc[i]} -> {df_flows['dst_ip'].iloc[i]}:{df_flows['dst_port'].iloc[i]})" for i in range(len(df_flows))]
-                selected_flow_str = st.selectbox("Select Flow Row:", flow_options, index=min(default_flow_idx, len(flow_options)-1))
-                selected_idx = flow_options.index(selected_flow_str)
-                selected_flow_df = df_flows.iloc[[selected_idx]]
-            else:
-                selected_flow_df = None
-                st.warning("No sample flows CSV found.")
-
-        if st.button("🚀 Run Unified Cross-Module Threat Detection", type="primary", use_container_width=True):
+        if st.button("🚀 Execute Pipeline 2: User Input ➔ SMS ➔ Extract URL ➔ PhishGuard ➔ Llama Prompt 2 ➔ Output", type="primary", use_container_width=True):
             pipeline.enable_llm_reasoning = enable_executorch
-            with st.spinner("Executing Local Multi-Model Inference Pipeline..."):
+            with st.spinner("Executing Pipeline 2 De-Obfuscation, Stacking Ensemble & PyTorch MLP..."):
                 t_start = time.perf_counter()
-                telemetry = pipeline.analyze_unified_event(
-                    sms_text=input_sms,
-                    flow_df=selected_flow_df
-                )
-                total_duration_ms = (time.perf_counter() - t_start) * 1000.0
+                p2_res = pipeline.run_pipeline_2(p2_input_sms)
+                elapsed_ms = (time.perf_counter() - t_start) * 1000.0
 
-            # Status Banner
-            status = telemetry["status"]
-            active_threats = telemetry["active_threats_count"]
+            # Render Pipeline 2 Results
+            status = p2_res["status"]
+            active_threats = p2_res["active_threats_count"]
 
             if status == "ALERT":
                 st.markdown(f"""
                     <div class="status-card-alert">
-                        <h3 style="margin:0; color:#EF4444;">🚨 THREAT ALERT - {active_threats} ACTIVE VECTOR(S) DETECTED</h3>
-                        <p style="margin:4px 0 0 0;">Edge pipeline identified active malicious indicators. Local incident telemetry compiled in {total_duration_ms:.2f} ms.</p>
+                        <h3 style="margin:0; color:#EF4444;">🚨 PIPELINE 2 ALERT: DECEPTIVE THREAT DETECTED</h3>
+                        <p style="margin:4px 0 0 0;">Identified {active_threats} active threat vector(s) across text and extracted web links. Elapsed: {elapsed_ms:.2f} ms.</p>
                     </div>
                 """, unsafe_allow_html=True)
             else:
                 st.markdown(f"""
                     <div class="status-card-clean">
-                        <h3 style="margin:0; color:#10B981;">✅ SYSTEM CLEAN - NO THREATS DETECTED</h3>
-                        <p style="margin:4px 0 0 0;">All edge detectors reported benign parameters. Pipeline verified in {total_duration_ms:.2f} ms.</p>
+                        <h3 style="margin:0; color:#10B981;">✅ PIPELINE 2 CLEAN: SAFE MESSAGE</h3>
+                        <p style="margin:4px 0 0 0;">SMS classifier and URL analyzer verified input as legitimate. Elapsed: {elapsed_ms:.2f} ms.</p>
                     </div>
                 """, unsafe_allow_html=True)
 
-            # Findings Grid
-            st.markdown("### Detector Findings")
-            cols = st.columns(len(telemetry["findings"]))
-            for i, finding in enumerate(telemetry["findings"]):
+            # Step 1: Text De-obfuscation comparison
+            st.markdown("#### Step 1: Text De-Obfuscation")
+            sms_f = next((f for f in p2_res["findings"] if f.get("module") == "SMS_Spam_Detector"), {})
+            c_raw, c_norm = st.columns(2)
+            with c_raw:
+                st.caption("Raw User Input:")
+                st.code(sms_f.get("raw_text", p2_input_sms), language="text")
+            with c_norm:
+                st.caption("De-Obfuscated Normalized Text:")
+                st.code(sms_f.get("normalized_text", "N/A"), language="text")
+
+            # Step 2: Findings Cards (SMS + URL)
+            st.markdown("#### Step 2 & 4: Model Telemetry (SMS Ensemble + PhishGuard MLP)")
+            cols = st.columns(len(p2_res["findings"]))
+            for i, finding in enumerate(p2_res["findings"]):
                 with cols[i]:
                     mod = finding.get("module")
                     if mod == "SMS_Spam_Detector":
                         is_th = finding.get("is_threat")
                         badge_cls = "badge-threat" if is_th else "badge-clean"
-                        st.markdown(f'<span class="finding-badge badge-module">Module 1</span><span class="finding-badge {badge_cls}">SMS Classifier</span>', unsafe_allow_html=True)
-                        st.metric("Threat Probability", f"{finding.get('threat_score')*100:.1f}%", f"Threshold: {finding.get('decision_threshold')*100:.1f}%")
-                        st.write(f"**Severity Level:** `{finding.get('threat_level')}`")
+                        st.markdown(f'<span class="finding-badge badge-module">Step 2: SMS Classifier</span><span class="finding-badge {badge_cls}">tau=0.390</span>', unsafe_allow_html=True)
+                        st.metric("Threat Probability", f"{finding.get('threat_score')*100:.1f}%", f"Level: {finding.get('threat_level')}")
                         st.write(f"**Triggers:** {', '.join(finding.get('detected_triggers', [])) or 'None'}")
-                        st.caption(f"Inference Latency: {finding.get('latency_ms')} ms")
-
+                        st.caption(f"Latency: {finding.get('latency_ms')} ms")
                     elif mod == "PhishGuard_URL_Detector":
                         is_ph = finding.get("is_phishing")
                         badge_cls = "badge-threat" if is_ph else "badge-clean"
-                        st.markdown(f'<span class="finding-badge badge-module">Module 2</span><span class="finding-badge {badge_cls}">PhishGuard URL</span>', unsafe_allow_html=True)
+                        st.markdown(f'<span class="finding-badge badge-module">Step 4: PhishGuard URL</span><span class="finding-badge {badge_cls}">PyTorch MLP</span>', unsafe_allow_html=True)
                         st.metric("Phishing Confidence", f"{finding.get('confidence_score')*100:.1f}%", f"Benign: {finding.get('benign_score')*100:.1f}%")
                         st.write(f"**Target URL:** `{finding.get('url')[:35]}...`")
                         st.write(f"**Anomalies:** {len(finding.get('domain_anomalies', []))} flagged")
-                        st.caption(f"PyTorch MLP Latency: {finding.get('latency_ms')} ms")
+                        st.caption(f"Latency: {finding.get('latency_ms')} ms")
 
-                    elif mod == "Network_NIDS":
-                        is_att = finding.get("is_attack")
-                        badge_cls = "badge-threat" if is_att else "badge-clean"
-                        st.markdown(f'<span class="finding-badge badge-module">Module 3</span><span class="finding-badge {badge_cls}">Edge NIDS</span>', unsafe_allow_html=True)
-                        st.metric("Attack Verdict", finding.get("attack_type"), f"Prob: {finding.get('attack_probability')*100:.1f}%")
-                        st.write(f"**Flow:** `{finding.get('flow_id')}` ({finding.get('src_ip')} -> {finding.get('dst_ip')})")
-                        st.write(f"**Top SHAP:** `{finding.get('shap_evidence', [{}])[0].get('feature', 'N/A')}`")
-                        st.caption(f"XGBoost+SHAP Latency: {finding.get('latency_ms')} ms")
+            # Step 5: Llama Prompt 2
+            st.markdown("#### Step 5: Llama Prompt 2 Constructor")
+            st.caption("Input: `~ SMS Scam Detector telemetry output ~ PhishGuard URL Detector telemetry output` formatted with Llama 3.2 Instruct tokens.")
+            with st.expander("View Constructed Llama Prompt 2", expanded=False):
+                st.code(p2_res.get("llama_prompt", ""), language="markdown")
 
-            # Dedicated ExecuTorch Llama 3.2 Reasoning Advisory Card
-            st.markdown("### 🤖 Local ExecuTorch Llama 3.2 Security Advisory")
-            advisory_text = telemetry.get("llama_advisory")
+            # Step 6: Local ExecuTorch Llama 3.2 Output Advisory
+            st.markdown("#### Step 6: Output Security Advisory (On-Device ExecuTorch Reasoning)")
+            advisory_text = p2_res.get("llama_advisory")
             if advisory_text:
                 is_native = pipeline.llama_engine.is_native_available()
                 backend_badge = "🟢 ExecuTorch Arm64 XNNPACK (Native)" if is_native else "🟡 Deterministic Edge Copilot (Grounded Fallback)"
-                st.caption(f"**Engine:** `{backend_badge}` | Model: `Llama-3.2-1B-Instruct (4-bit)` | Temp: `0.2`")
+                st.caption(f"**Engine:** `{backend_badge}` | Model: `Llama-3.2-1B-Instruct (4-bit)`")
                 st.markdown(f"""
                 <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid #00E5FF; border-radius: 12px; padding: 20px; margin-top: 10px;">
                     <div style="white-space: pre-wrap; font-size: 0.95rem; line-height: 1.6; color: #E2E8F0;">
@@ -311,205 +607,13 @@ def run_streamlit_app():
             elif not enable_executorch:
                 st.info("ℹ️ Local ExecuTorch Llama 3.2 Reasoning is disabled in the sidebar.")
 
-            # Standardized Telemetry JSON Display
-            st.markdown("### Standardized Telemetry Schema (Downstream Output)")
-            clean_telemetry = {k: v for k, v in telemetry.items() if k not in ["llama_prompt", "llama_advisory"]}
-            st.json(clean_telemetry)
-
-            # Llama 3.2 ExecuTorch Prompt Viewer
-            st.markdown("### Downstream Llama 3.2 ExecuTorch Zero-Shot Prompt")
-            with st.expander("View Raw ExecuTorch Llama-3.2 Chat Prompt", expanded=False):
-                st.code(telemetry["llama_prompt"], language="markdown")
+            # Step 7: Telemetry JSON Schema
+            with st.expander("Standardized Telemetry JSON Schema", expanded=False):
+                clean_telemetry = {k: v for k, v in p2_res.items() if k not in ["llama_prompt", "llama_advisory"]}
+                st.json(clean_telemetry)
 
     # =========================================================================
-    # TAB 2: MODULE 1 - SMS SCAM DETECTOR
-    # =========================================================================
-    with tab_sms:
-        st.subheader("Sub-Millisecond SMS Text Threat Classifier (99.2%+ Accuracy)")
-        st.markdown("""
-        **Pipeline Architecture:**
-        - **De-obfuscation Engine:** Repaired spaced words (`c l i c k`), dot obfuscations (`dr . ugs`), and leetspeak (`b@nk`, `k-y-c`).
-        - **Feature Vector:** 25,049 dimensions (10k Word TF-IDF + 15k Char TF-IDF + 43 Structural/Domain signals).
-        - **Ensemble Model:** Soft-voting ensemble with probability calibration at decision threshold `tau = 0.390`.
-        """)
-
-        # Sample quick buttons
-        col_s1, col_s2, col_s3, col_s4 = st.columns(4)
-        sample_sms = ""
-        if col_s1.button("🏦 Bank KYC Smish"):
-            sample_sms = "URGENT: Your SBI account has been locked. Update KYC immediately: http://bit.ly/sbi-kyc"
-        elif col_s2.button("🎰 Lottery Prize Scam"):
-            sample_sms = "Congratulations! You have won ₹10,00,000 cash prize! Claim free money now at http://win.xyz"
-        elif col_s3.button("🔤 Obfuscated Leetspeak"):
-            sample_sms = "Your b@nk a.c.c.o.u.n.t is b l o c k e d. Click k-y-c link to update up1 immediately!"
-        elif col_s4.button("💬 Normal Chat"):
-            sample_sms = "Hey, are you free to study for the exam tomorrow afternoon?"
-
-        sms_input_val = st.text_area("Enter SMS Message to inspect:", value=sample_sms if sample_sms else "Your b@nk a.c.c.o.u.n.t is b l o c k e d. Click k-y-c link to update up1 immediately!", height=90)
-
-        if st.button("Analyze SMS Message", type="primary"):
-            res = pipeline.sms_detector.predict(sms_input_val)
-
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Threat Classification", "SCAM / THREAT" if res["is_threat"] else "LEGITIMATE (HAM)")
-            c2.metric("Threat Probability", f"{res['threat_score']*100:.2f}%")
-            c3.metric("Decision Threshold", f"{res['decision_threshold']*100:.1f}%")
-            c4.metric("Inference Latency", f"{res['latency_ms']} ms")
-
-            st.markdown("#### Text De-Obfuscation Comparison")
-            col_raw, col_norm = st.columns(2)
-            with col_raw:
-                st.markdown("**Raw Input Text:**")
-                st.code(res["raw_text"], language="text")
-            with col_norm:
-                st.markdown("**De-Obfuscated Normalized Text:**")
-                st.code(res["normalized_text"], language="text")
-
-            st.markdown("#### Feature & Trigger Analysis")
-            st.write(f"• **Severity Level:** `{res['threat_level']}`")
-            st.write(f"• **Extracted Dimensions:** `{res['total_features']:,}` (10,000 Word + 15,000 Char + 49 Structural/Keywords)")
-            st.write(f"• **Detected Domain Keywords:** {', '.join(res['detected_triggers']) if res['detected_triggers'] else 'None'}")
-
-    # =========================================================================
-    # TAB 3: MODULE 2 - PHISHGUARD URL DETECTOR
-    # =========================================================================
-    with tab_url:
-        st.subheader("Deep URL Structural & Domain Feature Analyzer (PyTorch MLP)")
-        st.markdown("""
-        **Pipeline Architecture:**
-        - **Feature Extractor:** Shannon entropy (URL and domain), path length, query tokens, subdomain depth, special character frequencies.
-        - **Anomaly Detector:** Typosquatting token flags, high-risk TLDs, IP hostnames, multiple `//`, and sensitive auth keywords.
-        - **PyTorch MLP:** 1,334 transformed inputs -> Linear(256) -> ReLU -> Linear(128) -> ReLU -> Linear(2) with Softmax probabilities.
-        """)
-
-        # Sample quick buttons
-        col_u1, col_u2, col_u3 = st.columns(3)
-        sample_url = ""
-        if col_u1.button("🎣 Phishing Banking Portal"):
-            sample_url = "http://sbi-banking-verify-update.xyz/login.php?user=victim"
-        elif col_u2.button("🌐 Obfuscated IP URL"):
-            sample_url = "http://192.168.1.105/@secure-login.com/account/verify"
-        elif col_u3.button("✅ Official Safe Site"):
-            sample_url = "https://www.google.com"
-
-        url_input_val = st.text_input("Enter URL to inspect:", value=sample_url if sample_url else "http://sbi-banking-verify-update.xyz/login.php?user=victim")
-
-        if st.button("Analyze URL with PhishGuard", type="primary"):
-            u_res = pipeline.url_detector.predict(url_input_val)
-
-            cu1, cu2, cu3, cu4 = st.columns(4)
-            cu1.metric("Verdict", "PHISHING" if u_res["is_phishing"] else "BENIGN")
-            cu2.metric("Phishing Confidence", f"{u_res['confidence_score']*100:.2f}%")
-            cu3.metric("Benign Score", f"{u_res['benign_score']*100:.2f}%")
-            cu4.metric("PyTorch MLP Latency", f"{u_res['latency_ms']} ms")
-
-            st.markdown("#### Domain Anomalies & Heuristic Indicators")
-            for anom in u_res["domain_anomalies"]:
-                st.warning(f"⚠️ {anom}")
-
-            st.markdown("#### Extracted Structural Telemetry")
-            st.json(u_res["features"])
-
-    # =========================================================================
-    # TAB 4: MODULE 3 - NETWORK NIDS & SHAP
-    # =========================================================================
-    with tab_nids:
-        st.subheader("13-Class Real-Time Flow Monitor with SHAP Explainability")
-        st.markdown("""
-        **Pipeline Architecture:**
-        - **3 Input Modes:** Pre-extracted CSV rows, PCAP file replay, and Live Network Capture.
-        - **Stage 1 (Binary Detector):** Evaluates `P(Attack) >= 0.3545` (calibrated on BCCC dataset).
-        - **Stage 2 (13-Class Classifier):** Identifies specific threat: *SSH-Patator, DoS_Hulk, Port_Scan, DDoS_LOIT, Botnet_ARES, etc.*
-        - **Stage 3 (SHAP Explainer):** Computes top-5 mathematical feature attributions via TreeExplainer as forensic evidence.
-        """)
-
-        input_mode = st.radio("Select Input Mode:", ["Mode 1: Pre-extracted CSV Rows", "Mode 2: PCAP File Replay", "Mode 3: Live Network Stream"], horizontal=True)
-
-        if input_mode == "Mode 1: Pre-extracted CSV Rows":
-            st.markdown("##### Mode 1: Pre-extracted Flow CSV Analysis")
-            sample_csv_path = WORKSPACE_ROOT / "data" / "sample_flows.csv"
-            if not sample_csv_path.exists():
-                sample_csv_path = WORKSPACE_ROOT / "modules" / "nids" / "tests" / "fixtures" / "parity_rows.csv"
-            if not sample_csv_path.exists():
-                sample_csv_path = WORKSPACE_ROOT / "nids" / "tests" / "fixtures" / "parity_rows.csv"
-
-            df_curated = pd.read_csv(sample_csv_path, nrows=25)
-            st.dataframe(df_curated[["flow_id", "src_ip", "src_port", "dst_ip", "dst_port", "protocol", "packets_count"]].head(10))
-
-            row_to_test = st.number_input("Select Row Index to Test (0 to 24):", min_value=0, max_value=len(df_curated)-1, value=0)
-
-            if st.button("Run NIDS Inference on Selected Flow", type="primary"):
-                test_row = df_curated.iloc[[row_to_test]]
-                preds = pipeline.nids.predict_dataframe(test_row)
-                if preds:
-                    p = preds[0]
-                    cn1, cn2, cn3, cn4 = st.columns(4)
-                    cn1.metric("Verdict", "ATTACK" if p["is_attack"] else "BENIGN")
-                    cn2.metric("Attack Type", p["attack_type"])
-                    cn3.metric("Attack Probability", f"{p['attack_probability']*100:.2f}%", f"Threshold: {p['decision_threshold']*100:.2f}%")
-                    cn4.metric("Inference Latency", f"{p['latency_ms']} ms")
-
-                    st.markdown("#### Top-5 SHAP Mathematical Evidence")
-                    shap_df = pd.DataFrame(p["shap_evidence"])
-                    st.dataframe(shap_df, use_container_width=True)
-
-                    # Horizontal Bar Chart for SHAP contributions
-                    chart = alt.Chart(shap_df).mark_bar().encode(
-                        x=alt.X('shap_value:Q', title='SHAP Attribution Value (+ Attack, - Benign)'),
-                        y=alt.Y('feature:N', sort='-x', title='Flow Metric'),
-                        color=alt.condition(
-                            alt.datum.shap_value > 0,
-                            alt.value("#EF4444"),  # Red for attack
-                            alt.value("#3B82F6")   # Blue for benign
-                        ),
-                        tooltip=['feature', 'value', 'shap_value']
-                    ).properties(height=240)
-                    st.altair_chart(chart, use_container_width=True)
-
-        elif input_mode == "Mode 2: PCAP File Replay":
-            st.markdown("##### Mode 2: PCAP Capture Replay")
-            sample_pcap = WORKSPACE_ROOT / "data" / "sample_traffic.pcap"
-            st.info(f"Loaded sample edge capture file: `{sample_pcap.name}` ({sample_pcap.stat().st_size if sample_pcap.exists() else 0} bytes).")
-
-            uploaded_pcap = st.file_uploader("Or upload custom .pcap / .pcapng file:", type=["pcap", "pcapng"])
-            target_pcap = uploaded_pcap if uploaded_pcap else sample_pcap
-
-            if st.button("Replay PCAP through Edge Extractor", type="primary"):
-                with st.spinner("Extracting flows and running classification..."):
-                    pcap_to_run = target_pcap
-                    if uploaded_pcap:
-                        temp_path = WORKSPACE_ROOT / "data" / "uploaded_temp.pcap"
-                        with open(temp_path, "wb") as f:
-                            f.write(uploaded_pcap.read())
-                        pcap_to_run = temp_path
-
-                    pcap_findings = pipeline.nids.predict_pcap(pcap_to_run)
-                    st.success(f"Extracted and classified {len(pcap_findings)} flow(s) from PCAP.")
-                    for f in pcap_findings[:5]:
-                        st.write(f"• **Flow `{f['flow_id']}`**: Verdict=`{f['attack_type']}` | Attack Prob={f['attack_probability']*100:.1f}%")
-
-        elif input_mode == "Mode 3: Live Network Stream":
-            st.markdown("##### Mode 3: Live Network Capture Stream")
-            st.write("Interface capture via `dumpcap` with ring buffer rotation on Linux / Raspberry Pi 5.")
-            st.caption("On development systems without packet capture privileges, click below to stream simulated edge network flows.")
-
-            if st.button("Start Live Network Packet Stream (5 Flows)"):
-                with st.spinner("Capturing live traffic..."):
-                    fixture_csv = WORKSPACE_ROOT / "data" / "sample_flows.csv"
-                    if not fixture_csv.exists():
-                        fixture_csv = WORKSPACE_ROOT / "modules" / "nids" / "tests" / "fixtures" / "parity_rows.csv"
-                    if not fixture_csv.exists():
-                        fixture_csv = WORKSPACE_ROOT / "nids" / "tests" / "fixtures" / "parity_rows.csv"
-                    df_stream = pd.read_csv(fixture_csv, nrows=5)
-                    df_stream["timestamp"] = [datetime.now(timezone.utc).isoformat() for _ in range(len(df_stream))]
-                    stream_preds = pipeline.nids.predict_dataframe(df_stream)
-
-                    st.markdown("#### Real-time Flow Telemetry Stream")
-                    for sp in stream_preds:
-                        st.write(f"[{sp['timestamp']}] Flow `{sp['flow_id']}` ({sp['src_ip']}:{sp['src_port']} -> {sp['dst_ip']}:{sp['dst_port']}) -> **{sp['attack_type']}** (Confidence: {sp['confidence']*100:.1f}%)")
-
-    # =========================================================================
-    # TAB 5: EDGE SOC ARCHITECTURE
+    # TAB 3: EDGE SOC ARCHITECTURE
     # =========================================================================
     with tab_specs:
         st.subheader("Bharat AI-SoC: System Architecture & Deployment Specifications")
@@ -518,41 +622,11 @@ def run_streamlit_app():
         - **Processor:** Broadcom BCM2712 / Bharat SoC (Quad-core ARM Cortex-A76 @ 2.4GHz)
         - **Host OS:** Linux (Debian 12 Bookworm 64-bit / Raspberry Pi OS)
         - **Inference Accelerators:** Local NPU / ARM NEON SIMD vector extensions
-        - **Downstream Reasoning Engine:** Meta Llama 3.2 1B-Instruct compiled via ExecuTorch (XNNPACK / QNN backend)
+        - **Downstream Reasoning Engine:** Meta Llama 3.2 1B-Instruct compiled via ExecuTorch (XNNPACK backend)
 
-        ### Pipeline Telemetry Schema
-        ```json
-        {
-          "status": "ALERT",
-          "timestamp": "2026-11-19T18:30:00Z",
-          "active_threats_count": 2,
-          "findings": [
-            {
-              "module": "SMS_Spam_Detector",
-              "is_threat": true,
-              "threat_score": 0.9978,
-              "threat_level": "HIGH",
-              "detected_triggers": ["kyc", "bank", "urgent"]
-            },
-            {
-              "module": "PhishGuard_URL_Detector",
-              "is_phishing": true,
-              "confidence_score": 1.0,
-              "domain_anomalies": ["High-risk TLD (.xyz)", "Excessive hyphens"]
-            },
-            {
-              "module": "Network_NIDS",
-              "flow_id": "parity-000",
-              "is_attack": true,
-              "attack_type": "SSH-Patator",
-              "confidence": 0.4522,
-              "shap_evidence": [
-                {"feature": "fwd_psh_flag_counts", "value": 497.42, "shap_value": 1.3097}
-              ]
-            }
-          ]
-        }
-        ```
+        ### Dual Pipeline Operational Contracts
+        - **Pipeline 1:** `Live Network (dumpcap / PCAP / Flow records) ──> NIDS (XGBoost + SHAP) ──> Llama Prompt 1 (Input: NIDS: ~ NIDS telemetry output (for attack)) ──> Output Advisory`
+        - **Pipeline 2:** `User Input (SMS) ──> SMS Scam Detector ──> Extract URL ──> PhishGuard URL Detector ──> Llama Prompt 2 (Input: ~ SMS Scam Detector telemetry output ~ PhishGuard URL Detector telemetry output) ──> Output Advisory`
         """)
 
 

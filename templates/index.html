@@ -3,28 +3,34 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Bharat AI-SoC: On-Device Edge Threat Detection</title>
+  <title>Bharat AI-SoC: On-Device Dual Threat Pipelines</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     body { font-family: 'Inter', sans-serif; background-color: #0b0f19; color: #e2e8f0; }
     .mono { font-family: 'JetBrains Mono', monospace; }
-    .glass-card { background: rgba(17, 24, 39, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.08); }
-    .badge-alert { background: rgba(239, 68, 68, 0.2); border: 1px solid #ef4444; color: #fca5a5; }
-    .badge-clean { background: rgba(16, 185, 129, 0.2); border: 1px solid #10b981; color: #6ee7b7; }
+    .glass-card { background: rgba(17, 24, 39, 0.75); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.08); }
+    .badge-alert { background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; color: #fca5a5; }
+    .badge-clean { background: rgba(16, 185, 129, 0.15); border: 1px solid #10b981; color: #6ee7b7; }
+    .badge-warning { background: rgba(245, 158, 11, 0.15); border: 1px solid #f59e0b; color: #fcd34d; }
     .glow-cyan { text-shadow: 0 0 16px rgba(6, 182, 212, 0.6); }
+    .pipeline-step { transition: all 0.2s ease-in-out; }
+    .pipeline-step:hover { transform: translateY(-2px); }
   </style>
 </head>
 <body class="min-h-screen flex flex-col">
 
-  <!-- Top Navigation Bar -->
-  <header class="border-b border-gray-800 bg-gray-950/80 sticky top-0 z-50 backdrop-blur">
+  <!-- Top Navigation Header -->
+  <header class="border-b border-gray-800 bg-gray-950/90 sticky top-0 z-50 backdrop-blur">
     <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
       <div class="flex items-center space-x-3">
-        <span class="text-2xl">🛡️</span>
+        <span class="text-3xl">🛡️</span>
         <div>
-          <h1 class="text-lg font-bold text-cyan-400 glow-cyan leading-tight">Bharat AI-SoC Threat Telemetry</h1>
-          <p class="text-xs text-gray-400">On-Device Security Pipeline (Problem Statement 3 - Linux / Raspberry Pi 5)</p>
+          <div class="flex items-center gap-2">
+            <h1 class="text-lg font-bold text-cyan-400 glow-cyan leading-tight">Abhedya AI-SoC Threat Telemetry</h1>
+            <span class="px-2 py-0.5 text-[10px] bg-cyan-950 border border-cyan-800 text-cyan-300 rounded mono">Dual Pipeline Engine</span>
+          </div>
+          <p class="text-xs text-gray-400">On-Device Edge Security Architecture (Problem Statement 3 — Linux / Raspberry Pi 5)</p>
         </div>
       </div>
       <div class="flex items-center space-x-3 text-xs mono">
@@ -32,276 +38,390 @@
           <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> SoC ONLINE
         </span>
         <span class="px-2.5 py-1 bg-gray-900 border border-gray-700 rounded-md text-cyan-400">
-          RPi 5 / Cortex-A76
+          ARM Cortex-A76
+        </span>
+        <span class="px-2.5 py-1 bg-gray-900 border border-gray-700 rounded-md text-purple-400">
+          Llama 3.2 1B (4-bit PTE)
         </span>
       </div>
     </div>
   </header>
 
   <!-- Main Container -->
-  <main class="max-w-7xl mx-auto px-4 py-6 flex-1 w-full">
-    
-    <!-- Edge Status Overview Cards -->
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 text-sm">
-      <div class="glass-card rounded-xl p-4">
-        <div class="text-gray-400 text-xs mb-1">Module 1: SMS Scam Detector</div>
-        <div class="text-emerald-400 font-semibold flex items-center gap-1">✅ 99.26% Sub-ms Classifier</div>
-        <div class="text-gray-500 text-xs mt-1 mono">25,049 Dims | tau=0.390</div>
+  <main class="max-w-7xl mx-auto px-4 py-6 flex-1 w-full space-y-6">
+
+    <!-- Top Architecture Summary -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+      <!-- Pipeline 1 Architecture Card -->
+      <div class="glass-card rounded-xl p-3.5 border-l-4 border-l-red-500">
+        <div class="flex items-center justify-between mb-1.5">
+          <span class="font-bold text-red-400 flex items-center gap-1.5 text-sm">
+            <span>🛡️ Pipeline 1: Live Network Threat Pipeline</span>
+          </span>
+          <span class="mono text-[10px] text-gray-400 bg-gray-900 px-2 py-0.5 rounded border border-gray-800">tau=0.3545</span>
+        </div>
+        <div class="mono text-[11px] text-gray-300 flex items-center flex-wrap gap-1 leading-relaxed">
+          <span class="bg-gray-900 px-1.5 py-0.5 rounded text-cyan-300">Live Network</span>
+          <span>➔</span>
+          <span class="bg-gray-900 px-1.5 py-0.5 rounded text-amber-300">NIDS (XGBoost + SHAP)</span>
+          <span>➔</span>
+          <span class="bg-gray-900 px-1.5 py-0.5 rounded text-purple-300">Llama Prompt 1 (for attack)</span>
+          <span>➔</span>
+          <span class="bg-gray-900 px-1.5 py-0.5 rounded text-emerald-300">Output Advisory</span>
+        </div>
       </div>
-      <div class="glass-card rounded-xl p-4">
-        <div class="text-gray-400 text-xs mb-1">Module 2: PhishGuard URL</div>
-        <div class="text-emerald-400 font-semibold flex items-center gap-1">✅ PyTorch MLP Model</div>
-        <div class="text-gray-500 text-xs mt-1 mono">375k Params | 1,334 In</div>
-      </div>
-      <div class="glass-card rounded-xl p-4">
-        <div class="text-gray-400 text-xs mb-1">Module 3: Network NIDS</div>
-        <div class="text-emerald-400 font-semibold flex items-center gap-1">✅ 13-Class XGBoost + SHAP</div>
-        <div class="text-gray-500 text-xs mt-1 mono">tau=0.3545 | Top-5 SHAP</div>
-      </div>
-      <div class="glass-card rounded-xl p-4">
-        <div class="text-gray-400 text-xs mb-1">Downstream LLM Target</div>
-        <div class="text-cyan-400 font-semibold flex items-center gap-1">⚡ Llama 3.2 ExecuTorch</div>
-        <div class="text-gray-500 text-xs mt-1 mono">On-Device Prompt Ready</div>
+
+      <!-- Pipeline 2 Architecture Card -->
+      <div class="glass-card rounded-xl p-3.5 border-l-4 border-l-cyan-500">
+        <div class="flex items-center justify-between mb-1.5">
+          <span class="font-bold text-cyan-400 flex items-center gap-1.5 text-sm">
+            <span>📱 Pipeline 2: User Smishing & Phishing Pipeline</span>
+          </span>
+          <span class="mono text-[10px] text-gray-400 bg-gray-900 px-2 py-0.5 rounded border border-gray-800">tau=0.390</span>
+        </div>
+        <div class="mono text-[11px] text-gray-300 flex items-center flex-wrap gap-1 leading-relaxed">
+          <span class="bg-gray-900 px-1.5 py-0.5 rounded text-cyan-300">User Input</span>
+          <span>➔</span>
+          <span class="bg-gray-900 px-1.5 py-0.5 rounded text-amber-300">SMS Scam Detector</span>
+          <span>➔</span>
+          <span class="bg-gray-900 px-1.5 py-0.5 rounded text-blue-300">Extract URL</span>
+          <span>➔</span>
+          <span class="bg-gray-900 px-1.5 py-0.5 rounded text-emerald-300">PhishGuard</span>
+          <span>➔</span>
+          <span class="bg-gray-900 px-1.5 py-0.5 rounded text-purple-300">Llama Prompt 2</span>
+          <span>➔</span>
+          <span class="bg-gray-900 px-1.5 py-0.5 rounded text-emerald-300">Output</span>
+        </div>
       </div>
     </div>
 
     <!-- Navigation Tabs -->
-    <div class="flex space-x-2 border-b border-gray-800 mb-6">
-      <button onclick="switchTab('tab-unified')" id="btn-tab-unified" class="tab-btn px-4 py-2 font-medium text-sm border-b-2 border-cyan-400 text-cyan-400">🌐 Unified Threat Correlator</button>
-      <button onclick="switchTab('tab-sms')" id="btn-tab-sms" class="tab-btn px-4 py-2 font-medium text-sm border-b-2 border-transparent text-gray-400 hover:text-gray-200">📱 SMS Scam Detector</button>
-      <button onclick="switchTab('tab-url')" id="btn-tab-url" class="tab-btn px-4 py-2 font-medium text-sm border-b-2 border-transparent text-gray-400 hover:text-gray-200">🔗 PhishGuard URL Detector</button>
-      <button onclick="switchTab('tab-nids')" id="btn-tab-nids" class="tab-btn px-4 py-2 font-medium text-sm border-b-2 border-transparent text-gray-400 hover:text-gray-200">🛡️ Network NIDS & SHAP</button>
+    <div class="flex space-x-2 border-b border-gray-800">
+      <button onclick="switchTab('tab-p1')" id="btn-tab-p1" class="tab-btn px-4 py-2.5 font-semibold text-sm border-b-2 border-cyan-400 text-cyan-400 flex items-center gap-2">
+        <span>🛡️ Pipeline 1: Live Network ➔ NIDS ➔ Llama Prompt 1 ➔ Output</span>
+      </button>
+      <button onclick="switchTab('tab-p2')" id="btn-tab-p2" class="tab-btn px-4 py-2.5 font-semibold text-sm border-b-2 border-transparent text-gray-400 hover:text-gray-200 flex items-center gap-2">
+        <span>📱 Pipeline 2: User Input ➔ SMS ➔ Extract URL ➔ PhishGuard ➔ Llama Prompt 2 ➔ Output</span>
+      </button>
     </div>
 
-    <!-- TAB 1: UNIFIED CORRELATOR -->
-    <div id="tab-unified" class="tab-content space-y-6">
+    <!-- ========================================================================= -->
+    <!-- TAB 1: PIPELINE 1 (Live Network -> NIDS -> Llama Prompt 1 -> Output)       -->
+    <!-- ========================================================================= -->
+    <div id="tab-p1" class="tab-content space-y-6">
+      
+      <!-- Pipeline 1 Interactive Ingestion Card -->
       <div class="glass-card rounded-xl p-6">
-        <h2 class="text-lg font-bold text-cyan-400 mb-2">Cross-Module Automated Correlation</h2>
-        <p class="text-gray-400 text-sm mb-4">Input SMS messages with embedded links to test the Auto-Link Extractor and multi-vector correlation against edge network traffic.</p>
-        
-        <div class="flex flex-wrap gap-2 mb-4">
-          <button onclick="setScenario('smish')" class="px-3 py-1 bg-red-950/60 hover:bg-red-900 border border-red-800 text-red-300 text-xs rounded-md">Preset: Bank KYC Smish + URL</button>
-          <button onclick="setScenario('lottery')" class="px-3 py-1 bg-amber-950/60 hover:bg-amber-900 border border-amber-800 text-amber-300 text-xs rounded-md">Preset: Lottery Prize Scam</button>
-          <button onclick="setScenario('clean')" class="px-3 py-1 bg-emerald-950/60 hover:bg-emerald-900 border border-emerald-800 text-emerald-300 text-xs rounded-md">Preset: Clean Legitimate SMS</button>
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="text-base font-bold text-cyan-400 flex items-center gap-2">
+            <span>🛡️ Pipeline 1: Live Network Threat Detection</span>
+          </h2>
+          <span class="mono text-xs text-gray-400 bg-gray-900 px-2.5 py-1 rounded border border-gray-800">Input: NIDS Telemetry Output (for attack)</span>
+        </div>
+        <p class="text-gray-400 text-xs mb-4">
+          Monitors incoming network flow streams, detects line-rate intrusions via two-stage XGBoost (<span class="mono text-cyan-300">tau=0.3545</span>), extracts top-5 mathematical SHAP feature attributions, formats <strong class="text-cyan-300">Llama Prompt 1</strong>, and outputs an actionable security containment advisory.
+        </p>
+
+        <!-- Real Network Ingestion Controls -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div class="bg-gray-900/80 p-3.5 rounded-lg border border-gray-800">
+            <div class="flex items-center justify-between mb-1">
+              <div class="text-[10px] uppercase font-bold text-cyan-400">Mode A: Live Interface Capture (dumpcap)</div>
+              <span class="text-[10px] mono text-cyan-300 bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-800/60 font-semibold">Window Size: 1 min (60s)</span>
+            </div>
+            <p class="text-[11px] text-gray-400 mb-2">Continuous tumbling capture from Linux network interfaces. When started, automatically updates with the new 1-minute window and automatically discards the last 1-minute window.</p>
+            <div class="space-y-2 mt-2">
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="block text-[11px] text-gray-400 mb-1">Capture Interface:</label>
+                  <select id="p1-live-interface" class="w-full bg-gray-950 border border-gray-700 rounded p-1.5 text-xs mono text-cyan-300">
+                    <option value="any">any (All Linux Interfaces)</option>
+                    <option value="lo">lo (Local Loopback)</option>
+                    <option value="wlo1">wlo1 (Wireless Interface)</option>
+                    <option value="eno1">eno1 (Ethernet Interface)</option>
+                    <option value="eth0">eth0 (Edge Interface)</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-[11px] text-gray-400 mb-1">Window Duration:</label>
+                  <select id="p1-window-duration" class="w-full bg-gray-950 border border-gray-700 rounded p-1.5 text-xs mono text-cyan-300">
+                    <option value="60" selected>1 min (60s - Standard)</option>
+                    <option value="30">30 seconds (Fast Demo)</option>
+                    <option value="10">10 seconds (Quick Test)</option>
+                  </select>
+                </div>
+              </div>
+              <label class="flex items-center space-x-2 text-[11px] text-gray-300 cursor-pointer pt-0.5">
+                <input type="checkbox" id="p1-generate-probe" checked class="rounded border-gray-700 bg-gray-950 text-cyan-500 focus:ring-cyan-400">
+                <span>Inject probe traffic during capture (ensures live flows)</span>
+              </label>
+
+              <!-- START & STOP CONTROLS -->
+              <div class="grid grid-cols-2 gap-2 pt-1">
+                <button id="p1-btn-start" onclick="startPipeline1Monitoring()" class="w-full px-3 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold text-xs rounded shadow flex items-center justify-center gap-1.5 transition">
+                  <span class="w-2 h-2 rounded-full bg-white animate-pulse"></span>
+                  <span>▶️ Start 1-Min Monitoring</span>
+                </button>
+                <button id="p1-btn-stop" onclick="stopPipeline1Monitoring()" disabled class="w-full px-3 py-2 bg-gray-800 text-gray-500 font-semibold text-xs rounded border border-gray-700 flex items-center justify-center gap-1.5 cursor-not-allowed transition">
+                  <span>⏹️ Stop Monitoring</span>
+                </button>
+              </div>
+              <button id="p1-btn-single" onclick="runPipeline1('live')" class="w-full px-2 py-1.5 bg-gray-900 hover:bg-gray-800 text-gray-300 text-[11px] rounded border border-gray-700 flex items-center justify-center gap-1">
+                <span>⚡ Execute Single 1-Min Window</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="bg-gray-900/80 p-3.5 rounded-lg border border-gray-800 flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between mb-1">
+                <div class="text-[10px] uppercase font-bold text-amber-400">Mode B: Real PCAP / PCAPNG Replay</div>
+                <span class="text-[10px] mono text-amber-300 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-800/60 font-semibold">1-Min Packet Trace</span>
+              </div>
+              <p class="text-[11px] text-gray-400 mb-2">Replays network packets from <span class="mono text-gray-300">sample_traffic.pcap</span> through native DPkt flow reconstructor.</p>
+            </div>
+            <button onclick="runPipeline1('pcap')" class="w-full px-3 py-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-semibold text-xs rounded shadow flex items-center justify-center gap-1.5">
+              <span>📁 Ingest PCAP Packets</span>
+            </button>
+          </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label class="block text-xs font-semibold text-gray-300 mb-1">Incoming SMS Text:</label>
-            <textarea id="unified-sms-input" rows="3" class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-sm focus:border-cyan-400 focus:outline-none mono">URGENT: Your SBI account has been locked. Update KYC immediately: http://sbi-banking-verify-update.xyz/login.php?user=victim</textarea>
-            <p class="text-xs text-cyan-400 mt-1">🔗 Auto-Link Extractor is active: embedded links are parsed and routed to PhishGuard automatically.</p>
-          </div>
-          <div>
-            <label class="block text-xs font-semibold text-gray-300 mb-1">Network Traffic Context:</label>
-            <select id="unified-flow-select" class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-sm focus:border-cyan-400 focus:outline-none mono">
-              <option value="0">Flow parity-000: 10.0.0.1:55745 -> 10.0.0.2:41743 (SSH-Patator Attack)</option>
-              <option value="1">Flow parity-001: 10.0.0.1:31010 -> 10.0.0.2:33542 (SSH-Patator Attack)</option>
-              <option value="2">Flow parity-002: 10.0.0.1:12345 -> 10.0.0.2:80 (Benign Flow)</option>
-              <option value="3">Flow parity-003: 10.0.0.1:53182 -> 10.0.0.2:5613 (DoS_Slowhttptest Attack)</option>
-            </select>
-            <p class="text-xs text-gray-400 mt-1">Select flow event to evaluate simultaneous multi-vector infiltration.</p>
-          </div>
-        </div>
-
-        <div class="flex flex-wrap items-center justify-between gap-3 mt-4">
-          <button onclick="runUnifiedAnalysis()" class="px-6 py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-semibold text-sm rounded-lg shadow-lg flex items-center gap-2">
-            <span>🚀 Run Multi-Model Threat Evaluation</span>
-          </button>
-          <label class="flex items-center space-x-2 text-xs text-cyan-300 cursor-pointer bg-gray-900/90 px-3 py-2 rounded-lg border border-gray-700/80 hover:border-cyan-500/50 transition">
-            <input type="checkbox" id="toggle-llama-reasoning" checked class="rounded border-gray-600 text-cyan-500 focus:ring-cyan-400">
+        <div class="flex items-center justify-between border-t border-gray-800/80 pt-3">
+          <span class="text-xs text-gray-400 mono">Execution Engine: Two-Stage XGBoost (<span class="text-cyan-300">tau=0.3545</span>) + SHAP TreeExplainer</span>
+          <label class="flex items-center space-x-2 text-xs text-cyan-300 cursor-pointer bg-gray-900/90 px-3 py-1.5 rounded-lg border border-gray-700/80">
+            <input type="checkbox" id="p1-toggle-llama" checked class="rounded border-gray-600 text-cyan-500 focus:ring-cyan-400">
             <span>Enable Local ExecuTorch Llama 3.2 Reasoning (Arm CPU)</span>
           </label>
         </div>
       </div>
 
-      <!-- Telemetry Output Section -->
-      <div id="unified-results" class="hidden space-y-4">
+      <!-- Pipeline 1 Step-by-Step Execution Container -->
+      <div id="p1-results" class="hidden space-y-4">
+        
+        <!-- Continuous 1-Min Window Indicator & Discard Notice -->
+        <div id="p1-window-tracker" class="hidden glass-card rounded-xl p-3 border border-cyan-800/60 bg-gray-950/70 text-xs">
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div class="flex items-center gap-2">
+              <span id="p1-tracker-pulse" class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span id="p1-tracker-title" class="font-bold text-cyan-300">Active Window: 1 Min (60s)</span>
+            </div>
+            <div id="p1-tracker-discard-notice" class="mono text-[11px] text-gray-400">
+              🔄 Discarded previous 1-min window | Live updates active
+            </div>
+          </div>
+        </div>
+
         <!-- Status Banner -->
-        <div id="status-banner" class="rounded-xl p-4 flex items-center justify-between border"></div>
+        <div id="p1-status-banner" class="rounded-xl p-4 flex items-center justify-between border"></div>
 
-        <!-- Findings Cards -->
-        <div id="findings-grid" class="grid grid-cols-1 md:grid-cols-3 gap-4"></div>
+        <!-- 4-Stage Visual Cards Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs">
+          <!-- Step 1: Ingested Flow -->
+          <div class="glass-card rounded-xl p-4 border border-cyan-800/40">
+            <div class="text-[10px] text-cyan-400 font-semibold uppercase mb-1">Step 1: Network Ingestion</div>
+            <div class="text-sm font-bold text-gray-200" id="p1-flow-id">Flow parity-000</div>
+            <div class="text-gray-400 mt-2 space-y-0.5 mono text-[11px]">
+              <div>Src: <span id="p1-src-ip" class="text-gray-200">10.0.0.1</span>:<span id="p1-src-port">55745</span></div>
+              <div>Dst: <span id="p1-dst-ip" class="text-gray-200">10.0.0.2</span>:<span id="p1-dst-port">41743</span></div>
+              <div>Protocol: <span id="p1-proto" class="text-cyan-300">TCP</span></div>
+            </div>
+            <div class="mt-2 text-[10px] text-gray-500 mono" id="p1-flow-timestamp">Timestamp: Active</div>
+          </div>
 
-        <!-- Dedicated ExecuTorch Llama 3.2 AI Reasoning Container -->
-        <div id="llama-advisory-card" class="glass-card rounded-xl p-5 border border-cyan-800/50 bg-gradient-to-br from-cyan-950/30 to-slate-900/80 shadow-lg">
+          <!-- Step 2: NIDS Verdict -->
+          <div class="glass-card rounded-xl p-4 border border-amber-800/40">
+            <div class="text-[10px] text-amber-400 font-semibold uppercase mb-1">Step 2: NIDS Two-Stage Gate</div>
+            <div class="text-sm font-bold" id="p1-verdict-text">ATTACK FLAGGED</div>
+            <div class="text-gray-400 mt-2 space-y-0.5 text-[11px]">
+              <div>Class: <span id="p1-attack-type" class="font-bold text-amber-300">SSH-Patator</span></div>
+              <div>Probability: <span id="p1-prob" class="mono text-cyan-300">92.5%</span></div>
+              <div>Gate Threshold: <span class="mono text-gray-400">tau=0.3545</span></div>
+            </div>
+            <div class="mt-2 text-[10px] text-emerald-400 mono" id="p1-nids-latency">Latency: 1.12 ms</div>
+          </div>
+
+          <!-- Step 3: Top SHAP Forensic Evidence -->
+          <div class="glass-card rounded-xl p-4 border border-purple-800/40 md:col-span-2">
+            <div class="text-[10px] text-purple-400 font-semibold uppercase mb-1">Step 2b: Top-5 SHAP Mathematical Attributions</div>
+            <div id="p1-shap-list" class="space-y-1 mt-2 text-[11px] mono"></div>
+          </div>
+        </div>
+
+        <!-- Step 4: Llama Prompt 1 (Input: NIDS Telemetry Output for Attack) -->
+        <div class="glass-card rounded-xl p-4 border border-blue-900/50">
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center gap-2">
+              <span class="text-base">🧠</span>
+              <h3 class="text-xs font-bold text-blue-300">Step 3: Llama Prompt 1 Constructor (Input: NIDS: ~ NIDS telemetry output (for attack))</h3>
+            </div>
+            <span class="text-[10px] mono text-blue-400 bg-blue-950 px-2 py-0.5 rounded border border-blue-800">Prompt 1 Payload</span>
+          </div>
+          <pre id="p1-llama-prompt" class="bg-gray-950 p-3 rounded-lg text-[11px] mono text-cyan-300 overflow-x-auto max-h-48 border border-gray-800"></pre>
+        </div>
+
+        <!-- Step 5: ExecuTorch Output Security Advisory -->
+        <div class="glass-card rounded-xl p-5 border border-cyan-800/50 bg-gradient-to-br from-cyan-950/20 to-slate-900/90 shadow-xl">
           <div class="flex items-center justify-between mb-3 border-b border-cyan-900/40 pb-2">
             <div class="flex items-center space-x-2">
-              <span class="text-xl">🧠</span>
-              <h3 class="text-sm font-bold text-cyan-300">Local ExecuTorch Llama 3.2 Security Advisory</h3>
+              <span class="text-xl">🛡️</span>
+              <h3 class="text-sm font-bold text-cyan-300">Step 4: Output Security Advisory (On-Device ExecuTorch Reasoning)</h3>
             </div>
-            <span class="px-2.5 py-0.5 text-xs bg-cyan-950/80 text-cyan-400 border border-cyan-700/60 rounded-md mono font-semibold">
-              1B-Instruct 4-bit PTE (Arm64)
+            <span class="px-2.5 py-0.5 text-[10px] bg-cyan-950 text-cyan-300 border border-cyan-700/60 rounded mono">
+              Meta Llama 3.2 1B-Instruct (4-bit XNNPACK)
             </span>
           </div>
-          <div id="llama-advisory-box" class="text-sm text-gray-200 whitespace-pre-wrap leading-relaxed p-4 bg-gray-950/90 rounded-lg border border-gray-800 mono"></div>
+          <div id="p1-advisory-box" class="text-xs text-gray-200 whitespace-pre-wrap leading-relaxed p-4 bg-gray-950/90 rounded-lg border border-gray-800 mono"></div>
         </div>
 
-        <!-- Standardized JSON Box -->
+        <!-- Standardized JSON Schema -->
         <div class="glass-card rounded-xl p-4">
           <div class="flex items-center justify-between mb-2">
-            <h3 class="text-sm font-bold text-gray-300">Standardized Telemetry JSON Schema</h3>
-            <span class="text-xs text-gray-500 mono">RFC 8259 Compliant</span>
+            <h3 class="text-xs font-bold text-gray-300">RFC 8259 Telemetry JSON Schema</h3>
+            <span class="text-[10px] text-gray-500 mono">Downstream Telemetry Contract</span>
           </div>
-          <pre id="telemetry-json" class="bg-gray-950 p-4 rounded-lg text-xs mono text-emerald-400 overflow-x-auto max-h-80 border border-gray-800"></pre>
+          <pre id="p1-telemetry-json" class="bg-gray-950 p-3 rounded-lg text-[11px] mono text-emerald-400 overflow-x-auto max-h-48 border border-gray-800"></pre>
         </div>
 
-        <!-- ExecuTorch Prompt -->
+      </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- TAB 2: PIPELINE 2 (User Input -> SMS -> Extract URL -> PhishGuard -> Prompt 2 -> Output) -->
+    <!-- ========================================================================= -->
+    <div id="tab-p2" class="tab-content hidden space-y-6">
+      
+      <!-- Pipeline 2 Ingestion Card -->
+      <div class="glass-card rounded-xl p-6">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="text-base font-bold text-cyan-400 flex items-center gap-2">
+            <span>📱 Pipeline 2: User Smishing & Phishing Detection</span>
+          </h2>
+          <span class="mono text-xs text-gray-400 bg-gray-900 px-2.5 py-1 rounded border border-gray-800">Input: ~ SMS Telemetry ~ PhishGuard Telemetry</span>
+        </div>
+        <p class="text-gray-400 text-xs mb-4">
+          De-obfuscates user input text, evaluates threat via 25,049-dim ensemble (<span class="mono text-cyan-300">tau=0.390</span>), automatically extracts embedded URLs, validates web links through PhishGuard PyTorch MLP (375k params), stitches <strong class="text-cyan-300">Llama Prompt 2</strong>, and generates an end-user safety advisory.
+        </p>
+
+        <!-- Presets -->
+        <div class="flex flex-wrap gap-2 mb-3">
+          <button onclick="setP2Preset('smish')" class="px-3 py-1 bg-red-950/70 hover:bg-red-900 border border-red-800 text-red-300 text-xs rounded-md">Preset 1: Bank KYC Smish + Malicious URL</button>
+          <button onclick="setP2Preset('lottery')" class="px-3 py-1 bg-amber-950/70 hover:bg-amber-900 border border-amber-800 text-amber-300 text-xs rounded-md">Preset 2: Lottery Prize Scam + Shortlink</button>
+          <button onclick="setP2Preset('obfuscated')" class="px-3 py-1 bg-purple-950/70 hover:bg-purple-900 border border-purple-800 text-purple-300 text-xs rounded-md">Preset 3: Obfuscated Leetspeak Message</button>
+          <button onclick="setP2Preset('clean')" class="px-3 py-1 bg-emerald-950/70 hover:bg-emerald-900 border border-emerald-800 text-emerald-300 text-xs rounded-md">Preset 4: Clean Benign Message</button>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-gray-300 mb-1">User Input (SMS / Direct Message):</label>
+          <textarea id="p2-sms-input" rows="3" class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-xs focus:border-cyan-400 focus:outline-none mono">URGENT: Your SBI account has been locked. Update KYC immediately: http://sbi-banking-verify-update.xyz/login.php?user=victim</textarea>
+          <p class="text-[11px] text-cyan-400 mt-1">🔗 <strong>Auto-Link Extractor Active:</strong> Any embedded URLs, shortlinks, or domains will be automatically extracted and routed to PhishGuard.</p>
+        </div>
+
+        <div class="flex items-center justify-between border-t border-gray-800/80 pt-4 mt-4">
+          <button onclick="runPipeline2()" class="px-6 py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-semibold text-xs rounded-lg shadow-lg flex items-center gap-2">
+            <span>🚀 Run Pipeline 2: User Input ➔ SMS ➔ Extract URL ➔ PhishGuard ➔ Llama Prompt 2 ➔ Output</span>
+          </button>
+          <label class="flex items-center space-x-2 text-xs text-cyan-300 cursor-pointer bg-gray-900/90 px-3 py-1.5 rounded-lg border border-gray-700/80">
+            <input type="checkbox" id="p2-toggle-llama" checked class="rounded border-gray-600 text-cyan-500 focus:ring-cyan-400">
+            <span>Enable Local ExecuTorch Llama 3.2 Reasoning (Arm CPU)</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Pipeline 2 Step-by-Step Execution Container -->
+      <div id="p2-results" class="hidden space-y-4">
+        
+        <!-- Status Banner -->
+        <div id="p2-status-banner" class="rounded-xl p-4 flex items-center justify-between border"></div>
+
+        <!-- Multi-Stage Cards Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs">
+          <!-- Step 1: Text De-obfuscation -->
+          <div class="glass-card rounded-xl p-4 border border-cyan-800/40">
+            <div class="text-[10px] text-cyan-400 font-semibold uppercase mb-1">Step 1: Text De-obfuscation</div>
+            <div class="text-gray-400 text-[11px] mb-1">Normalized Text:</div>
+            <div id="p2-norm-text" class="p-2 bg-gray-950 rounded border border-gray-800 text-[11px] mono text-cyan-200 break-words"></div>
+            <div class="mt-2 text-[10px] text-gray-500 mono">Repairs spaced text, leetspeak & dots</div>
+          </div>
+
+          <!-- Step 2: SMS Threat Classifier -->
+          <div class="glass-card rounded-xl p-4 border border-amber-800/40">
+            <div class="text-[10px] text-amber-400 font-semibold uppercase mb-1">Step 2: SMS Scam Detector</div>
+            <div id="p2-sms-verdict" class="text-sm font-bold">THREAT (SPAM)</div>
+            <div class="text-gray-400 mt-2 space-y-0.5 text-[11px]">
+              <div>Score: <span id="p2-sms-score" class="mono text-cyan-300 font-bold">99.2%</span></div>
+              <div>Severity: <span id="p2-sms-level" class="font-bold text-red-400">HIGH</span></div>
+              <div>Triggers: <span id="p2-sms-triggers" class="text-amber-300">kyc, bank, urgent</span></div>
+            </div>
+            <div id="p2-sms-latency" class="mt-2 text-[10px] text-emerald-400 mono">Latency: 0.61 ms</div>
+          </div>
+
+          <!-- Step 3: Auto-Link Extractor -->
+          <div class="glass-card rounded-xl p-4 border border-blue-800/40">
+            <div class="text-[10px] text-blue-400 font-semibold uppercase mb-1">Step 3: Auto-Link Extractor</div>
+            <div class="text-gray-400 text-[11px] mb-1">Extracted URL(s):</div>
+            <div id="p2-extracted-urls" class="p-2 bg-gray-950 rounded border border-gray-800 text-[11px] mono text-blue-200 break-all"></div>
+            <div class="mt-2 text-[10px] text-cyan-400 mono">Routed directly to PhishGuard</div>
+          </div>
+
+          <!-- Step 4: PhishGuard URL Detector -->
+          <div class="glass-card rounded-xl p-4 border border-emerald-800/40">
+            <div class="text-[10px] text-emerald-400 font-semibold uppercase mb-1">Step 4: PhishGuard URL Detector</div>
+            <div id="p2-url-verdict" class="text-sm font-bold">MALICIOUS PHISHING</div>
+            <div class="text-gray-400 mt-2 space-y-0.5 text-[11px]">
+              <div>Confidence: <span id="p2-url-conf" class="mono text-cyan-300 font-bold">99.9%</span></div>
+              <div>Anomalies: <span id="p2-url-anom-count" class="text-amber-300">2 flagged</span></div>
+            </div>
+            <div id="p2-url-latency" class="mt-2 text-[10px] text-emerald-400 mono">Latency: 0.84 ms</div>
+          </div>
+        </div>
+
+        <!-- Step 5: Llama Prompt 2 (Input: ~ SMS Telemetry ~ PhishGuard Telemetry) -->
+        <div class="glass-card rounded-xl p-4 border border-purple-900/50">
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center gap-2">
+              <span class="text-base">🧠</span>
+              <h3 class="text-xs font-bold text-purple-300">Step 5: Llama Prompt 2 Constructor (Input: ~ SMS Scam Detector telemetry output ~ PhishGuard URL Detector telemetry output)</h3>
+            </div>
+            <span class="text-[10px] mono text-purple-400 bg-purple-950 px-2 py-0.5 rounded border border-purple-800">Prompt 2 Payload</span>
+          </div>
+          <pre id="p2-llama-prompt" class="bg-gray-950 p-3 rounded-lg text-[11px] mono text-cyan-300 overflow-x-auto max-h-48 border border-gray-800"></pre>
+        </div>
+
+        <!-- Step 6: ExecuTorch Output Security Advisory -->
+        <div class="glass-card rounded-xl p-5 border border-cyan-800/50 bg-gradient-to-br from-cyan-950/20 to-slate-900/90 shadow-xl">
+          <div class="flex items-center justify-between mb-3 border-b border-cyan-900/40 pb-2">
+            <div class="flex items-center space-x-2">
+              <span class="text-xl">🛡️</span>
+              <h3 class="text-sm font-bold text-cyan-300">Step 6: Output Security Advisory (On-Device ExecuTorch Reasoning)</h3>
+            </div>
+            <span class="px-2.5 py-0.5 text-[10px] bg-cyan-950 text-cyan-300 border border-cyan-700/60 rounded mono">
+              Meta Llama 3.2 1B-Instruct (4-bit XNNPACK)
+            </span>
+          </div>
+          <div id="p2-advisory-box" class="text-xs text-gray-200 whitespace-pre-wrap leading-relaxed p-4 bg-gray-950/90 rounded-lg border border-gray-800 mono"></div>
+        </div>
+
+        <!-- Standardized JSON Schema -->
         <div class="glass-card rounded-xl p-4">
-          <h3 class="text-sm font-bold text-gray-300 mb-2">Downstream Llama 3.2 ExecuTorch Prompt</h3>
-          <pre id="executorch-prompt" class="bg-gray-950 p-4 rounded-lg text-xs mono text-cyan-300 overflow-x-auto max-h-60 border border-gray-800"></pre>
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-xs font-bold text-gray-300">RFC 8259 Telemetry JSON Schema</h3>
+            <span class="text-[10px] text-gray-500 mono">Downstream Telemetry Contract</span>
+          </div>
+          <pre id="p2-telemetry-json" class="bg-gray-950 p-3 rounded-lg text-[11px] mono text-emerald-400 overflow-x-auto max-h-48 border border-gray-800"></pre>
         </div>
+
       </div>
     </div>
 
-    <!-- TAB 2: SMS DETECTOR -->
-    <div id="tab-sms" class="tab-content hidden space-y-6">
-      <div class="glass-card rounded-xl p-6">
-        <h2 class="text-lg font-bold text-cyan-400 mb-2">SMS Scam Detector (A-spark-of-fire)</h2>
-        <p class="text-gray-400 text-sm mb-4">De-obfuscates text (spaced letters, dot obfuscations like <span class="mono text-cyan-400">dr . ugs</span>, leetspeak like <span class="mono text-cyan-400">b@nk</span>/<span class="mono text-cyan-400">k-y-c</span>) and extracts 25,049 features.</p>
-        
-        <textarea id="standalone-sms-input" rows="3" class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-sm focus:border-cyan-400 focus:outline-none mono">Your b@nk a.c.c.o.u.n.t has been locked. Verify k-y-c immediately!</textarea>
-        
-        <button onclick="runSmsAnalysis()" class="mt-3 px-5 py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-sm rounded-lg">Analyze SMS</button>
-        
-        <div id="sms-results" class="hidden mt-6 space-y-4">
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-            <div class="bg-gray-900 p-3 rounded-lg border border-gray-800">
-              <div class="text-xs text-gray-400">Verdict</div>
-              <div id="sms-verdict" class="text-base font-bold mt-1"></div>
-            </div>
-            <div class="bg-gray-900 p-3 rounded-lg border border-gray-800">
-              <div class="text-xs text-gray-400">Threat Score</div>
-              <div id="sms-score" class="text-base font-bold text-cyan-400 mt-1"></div>
-            </div>
-            <div class="bg-gray-900 p-3 rounded-lg border border-gray-800">
-              <div class="text-xs text-gray-400">Severity Level</div>
-              <div id="sms-level" class="text-base font-bold mt-1"></div>
-            </div>
-            <div class="bg-gray-900 p-3 rounded-lg border border-gray-800">
-              <div class="text-xs text-gray-400">Inference Latency</div>
-              <div id="sms-latency" class="text-base font-bold text-emerald-400 mt-1"></div>
-            </div>
-          </div>
-
-          <div class="bg-gray-900/80 p-4 rounded-lg border border-gray-800">
-            <div class="text-xs font-semibold text-gray-400 mb-1">De-Obfuscation Comparison:</div>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs mono">
-              <div>
-                <span class="text-gray-500">Raw Input:</span>
-                <p id="sms-raw" class="text-gray-300 mt-1 p-2 bg-gray-950 rounded"></p>
-              </div>
-              <div>
-                <span class="text-cyan-400">Normalized Output:</span>
-                <p id="sms-norm" class="text-cyan-200 mt-1 p-2 bg-gray-950 rounded"></p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- TAB 3: PHISHGUARD URL -->
-    <div id="tab-url" class="tab-content hidden space-y-6">
-      <div class="glass-card rounded-xl p-6">
-        <h2 class="text-lg font-bold text-cyan-400 mb-2">PhishGuard URL Detector (SwastikSaha)</h2>
-        <p class="text-gray-400 text-sm mb-4">Deep URL structural analyzer and 375,000-parameter PyTorch MLP classifier.</p>
-
-        <input type="text" id="standalone-url-input" class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-sm focus:border-cyan-400 focus:outline-none mono" value="http://sbi-banking-verify-update.xyz/login.php?user=victim" />
-
-        <button onclick="runUrlAnalysis()" class="mt-3 px-5 py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-sm rounded-lg">Analyze URL</button>
-
-        <div id="url-results" class="hidden mt-6 space-y-4">
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-            <div class="bg-gray-900 p-3 rounded-lg border border-gray-800">
-              <div class="text-xs text-gray-400">Verdict</div>
-              <div id="url-verdict" class="text-base font-bold mt-1"></div>
-            </div>
-            <div class="bg-gray-900 p-3 rounded-lg border border-gray-800">
-              <div class="text-xs text-gray-400">Phishing Confidence</div>
-              <div id="url-conf" class="text-base font-bold text-cyan-400 mt-1"></div>
-            </div>
-            <div class="bg-gray-900 p-3 rounded-lg border border-gray-800">
-              <div class="text-xs text-gray-400">Benign Probability</div>
-              <div id="url-benign" class="text-base font-bold text-emerald-400 mt-1"></div>
-            </div>
-            <div class="bg-gray-900 p-3 rounded-lg border border-gray-800">
-              <div class="text-xs text-gray-400">PyTorch MLP Latency</div>
-              <div id="url-latency" class="text-base font-bold text-emerald-400 mt-1"></div>
-            </div>
-          </div>
-
-          <div class="bg-gray-900/80 p-4 rounded-lg border border-gray-800">
-            <div class="text-xs font-semibold text-gray-400 mb-2">Domain Anomalies & Risk Flags:</div>
-            <ul id="url-anomalies" class="space-y-1 text-xs text-amber-300"></ul>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- TAB 4: NETWORK NIDS -->
-    <div id="tab-nids" class="tab-content hidden space-y-6">
-      <div class="glass-card rounded-xl p-6">
-        <h2 class="text-lg font-bold text-cyan-400 mb-2">Network Intrusion Detection System (Abhil4sh777)</h2>
-        <p class="text-gray-400 text-sm mb-4">13-class XGBoost NIDS with mathematical SHAP feature attributions.</p>
-
-        <div class="flex items-center gap-3">
-          <select id="nids-flow-idx" class="bg-gray-900 border border-gray-700 rounded-lg p-2.5 text-sm mono">
-            <option value="0">Row #0: SSH-Patator Infiltration (Port 41743)</option>
-            <option value="1">Row #1: SSH-Patator Infiltration (Port 33542)</option>
-            <option value="2">Row #2: Benign Baseline Flow (HTTP Port 80)</option>
-            <option value="3">Row #3: DoS_Slowhttptest Flooding (Port 5613)</option>
-          </select>
-          <button onclick="runNidsAnalysis()" class="px-5 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-sm rounded-lg">Run NIDS Inference</button>
-        </div>
-
-        <div id="nids-results" class="hidden mt-6 space-y-4">
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-            <div class="bg-gray-900 p-3 rounded-lg border border-gray-800">
-              <div class="text-xs text-gray-400">Verdict</div>
-              <div id="nids-verdict" class="text-base font-bold mt-1"></div>
-            </div>
-            <div class="bg-gray-900 p-3 rounded-lg border border-gray-800">
-              <div class="text-xs text-gray-400">Attack Type</div>
-              <div id="nids-type" class="text-base font-bold text-cyan-400 mt-1"></div>
-            </div>
-            <div class="bg-gray-900 p-3 rounded-lg border border-gray-800">
-              <div class="text-xs text-gray-400">Probability</div>
-              <div id="nids-prob" class="text-base font-bold mt-1"></div>
-            </div>
-            <div class="bg-gray-900 p-3 rounded-lg border border-gray-800">
-              <div class="text-xs text-gray-400">Latency</div>
-              <div id="nids-latency" class="text-base font-bold text-emerald-400 mt-1"></div>
-            </div>
-          </div>
-
-          <div class="bg-gray-900/80 p-4 rounded-lg border border-gray-800">
-            <div class="text-xs font-semibold text-gray-400 mb-2">Top-5 SHAP Mathematical Evidence:</div>
-            <div id="nids-shap-table" class="space-y-1.5 text-xs mono"></div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <!-- ========================================================================= -->
 
   </main>
 
   <footer class="border-t border-gray-800 py-4 text-center text-xs text-gray-500">
-    Bharat AI-SoC Challenge (Problem Statement 3 - On-Device Security) • Unified Multi-Model Edge Pipeline
+    Abhedya SoC • Dual Threat Pipeline Architecture • Problem Statement 3: On-Device Security (Linux / Raspberry Pi 5)
   </footer>
 
   <script>
-    let cachedFlows = [];
-
-    async function loadSampleFlows() {
-      try {
-        const res = await fetch('/api/sample/flows');
-        const data = await res.json();
-        cachedFlows = data.flows || [];
-      } catch (e) {
-        console.error("Failed to load sample flows", e);
-      }
-    }
-    loadSampleFlows();
-
     function switchTab(tabId) {
       document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
       document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -313,46 +433,238 @@
       document.getElementById('btn-' + tabId).classList.remove('border-transparent', 'text-gray-400');
     }
 
-    function setScenario(scen) {
-      const smsBox = document.getElementById('unified-sms-input');
-      const flowSel = document.getElementById('unified-flow-select');
-      if (scen === 'smish') {
-        smsBox.value = "URGENT: Your SBI account has been locked. Update KYC immediately: http://sbi-banking-verify-update.xyz/login.php?user=victim";
-        flowSel.value = "0";
-      } else if (scen === 'lottery') {
-        smsBox.value = "Congratulations! You won ₹50,000 cash reward. Claim free prize at: https://bit.ly/claim-prize-now";
-        flowSel.value = "3";
-      } else {
-        smsBox.value = "Hey, are you free for lunch today at 1pm at the cafeteria?";
-        flowSel.value = "2";
+    // -------------------------------------------------------------------------
+    // PIPELINE 1 EXECUTION (Live Network -> NIDS -> Prompt 1 -> Output)
+    // -------------------------------------------------------------------------
+    let p1Monitoring = false;
+    let p1WindowCounter = 0;
+    let p1CurrentWindow = null;
+    let p1PreviousWindowTimestamp = null;
+
+    async function startPipeline1Monitoring() {
+      if (p1Monitoring) return;
+      p1Monitoring = true;
+      p1WindowCounter = 0;
+
+      // Update UI button states
+      const startBtn = document.getElementById('p1-btn-start');
+      const stopBtn = document.getElementById('p1-btn-stop');
+      const singleBtn = document.getElementById('p1-btn-single');
+      if (startBtn) {
+        startBtn.disabled = true;
+        startBtn.classList.add('opacity-50', 'cursor-not-allowed');
+      }
+      if (stopBtn) {
+        stopBtn.disabled = false;
+        stopBtn.classList.remove('bg-gray-800', 'text-gray-500', 'cursor-not-allowed');
+        stopBtn.classList.add('bg-red-600', 'hover:bg-red-500', 'text-white', 'cursor-pointer');
+      }
+      if (singleBtn) singleBtn.disabled = true;
+
+      document.getElementById('p1-results').classList.remove('hidden');
+      const tracker = document.getElementById('p1-window-tracker');
+      if (tracker) tracker.classList.remove('hidden');
+
+      while (p1Monitoring) {
+        p1WindowCounter++;
+        const durationSec = parseInt(document.getElementById('p1-window-duration') ? document.getElementById('p1-window-duration').value : 60);
+        const liveInterface = document.getElementById('p1-live-interface') ? document.getElementById('p1-live-interface').value : 'any';
+        const shouldProbe = document.getElementById('p1-generate-probe') ? document.getElementById('p1-generate-probe').checked : true;
+        const enableLlama = document.getElementById('p1-toggle-llama').checked;
+
+        // Show window capturing indicator
+        const trackerTitle = document.getElementById('p1-tracker-title');
+        const trackerNotice = document.getElementById('p1-tracker-discard-notice');
+        if (trackerTitle) {
+          trackerTitle.innerHTML = `<span class="text-emerald-400">📡 Capturing Window #${p1WindowCounter}</span> on <span class="text-cyan-200">${liveInterface}</span> (${durationSec}s / 1 min)...`;
+        }
+        if (trackerNotice) {
+          trackerNotice.innerHTML = p1PreviousWindowTimestamp 
+            ? `🔄 Last 1-min window (${p1PreviousWindowTimestamp}) automatically discarded` 
+            : `⚡ First 1-min capture window started`;
+        }
+
+        try {
+          const res = await fetch('/api/pipeline1', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              mode: 'live',
+              interface: liveInterface,
+              duration: durationSec,
+              window_number: p1WindowCounter,
+              enable_llm_reasoning: enableLlama,
+              probe: shouldProbe
+            })
+          });
+
+          if (!p1Monitoring) break;
+
+          const data = await res.json();
+
+          // AUTOMATICALLY DISCARD LAST 1-MIN WINDOW
+          if (p1CurrentWindow) {
+            p1PreviousWindowTimestamp = p1CurrentWindow.timestamp;
+            p1CurrentWindow = null; // Explicit discard of previous window
+          }
+          p1CurrentWindow = data;
+
+          if (trackerTitle) {
+            trackerTitle.innerHTML = `<span class="text-cyan-300">✅ Active Window #${p1WindowCounter}</span> (${data.window_size_label || durationSec + 's'}) — Live Telemetry`;
+          }
+          if (trackerNotice) {
+            trackerNotice.innerHTML = p1PreviousWindowTimestamp 
+              ? `<span class="text-amber-300">🔄 Discarded 1-min window (${p1PreviousWindowTimestamp})</span> | Updated with Window #${p1WindowCounter}`
+              : `<span class="text-emerald-400">✨ Window #1 ingested</span>`;
+          }
+
+          renderPipeline1Results(data);
+
+        } catch (err) {
+          if (!p1Monitoring) break;
+          console.error("Window capture error:", err);
+          if (trackerNotice) {
+            trackerNotice.innerHTML = `<span class="text-red-400">⚠️ Error in window #${p1WindowCounter}: ${err.message}. Retrying next window...</span>`;
+          }
+          await new Promise(r => setTimeout(r, 2000));
+        }
+      }
+
+      resetMonitoringControls();
+    }
+
+    function stopPipeline1Monitoring() {
+      p1Monitoring = false;
+      resetMonitoringControls();
+      const trackerTitle = document.getElementById('p1-tracker-title');
+      const trackerNotice = document.getElementById('p1-tracker-discard-notice');
+      const trackerPulse = document.getElementById('p1-tracker-pulse');
+      if (trackerPulse) trackerPulse.classList.remove('animate-pulse');
+      if (trackerTitle) {
+        trackerTitle.innerHTML = `<span class="text-amber-400">⏹️ Monitoring Stopped</span> (Displaying Window #${p1WindowCounter})`;
+      }
+      if (trackerNotice) {
+        trackerNotice.innerHTML = `Prior windows automatically discarded. Ready to restart.`;
       }
     }
 
-    async function runUnifiedAnalysis() {
-      const smsText = document.getElementById('unified-sms-input').value;
-      const flowIdx = parseInt(document.getElementById('unified-flow-select').value);
-      const flowObj = cachedFlows[flowIdx] || null;
-      const enableLlama = document.getElementById('toggle-llama-reasoning').checked;
+    function resetMonitoringControls() {
+      const startBtn = document.getElementById('p1-btn-start');
+      const stopBtn = document.getElementById('p1-btn-stop');
+      const singleBtn = document.getElementById('p1-btn-single');
+      if (startBtn) {
+        startBtn.disabled = false;
+        startBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+      }
+      if (stopBtn) {
+        stopBtn.disabled = true;
+        stopBtn.classList.remove('bg-red-600', 'hover:bg-red-500', 'text-white', 'cursor-pointer');
+        stopBtn.classList.add('bg-gray-800', 'text-gray-500', 'cursor-not-allowed');
+      }
+      if (singleBtn) singleBtn.disabled = false;
+    }
 
-      const res = await fetch('/api/analyze/unified', {
+    async function runPipeline1(mode = 'live') {
+      const liveInterface = document.getElementById('p1-live-interface') ? document.getElementById('p1-live-interface').value : 'any';
+      const durationSec = parseInt(document.getElementById('p1-window-duration') ? document.getElementById('p1-window-duration').value : 60);
+      const enableLlama = document.getElementById('p1-toggle-llama').checked;
+      const shouldProbe = mode === 'live' && document.getElementById('p1-generate-probe') ? document.getElementById('p1-generate-probe').checked : false;
+
+      // Discard previous window
+      if (p1CurrentWindow) {
+        p1PreviousWindowTimestamp = p1CurrentWindow.timestamp;
+        p1CurrentWindow = null;
+      }
+
+      const res = await fetch('/api/pipeline1', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ sms_text: smsText, flow: flowObj, enable_llm_reasoning: enableLlama })
+        body: JSON.stringify({
+          mode: mode,
+          interface: liveInterface,
+          duration: durationSec,
+          window_number: 1,
+          enable_llm_reasoning: enableLlama,
+          probe: shouldProbe
+        })
       });
       const data = await res.json();
+      p1CurrentWindow = data;
 
-      document.getElementById('unified-results').classList.remove('hidden');
-      
-      // Status Banner
+      const tracker = document.getElementById('p1-window-tracker');
+      if (tracker) {
+        tracker.classList.remove('hidden');
+        document.getElementById('p1-tracker-title').innerHTML = `<span class="text-cyan-300">⚡ Single Window</span> (${data.window_size_label || durationSec + 's'})`;
+        document.getElementById('p1-tracker-discard-notice').innerHTML = p1PreviousWindowTimestamp 
+          ? `🔄 Discarded previous window (${p1PreviousWindowTimestamp})` 
+          : `Single window evaluation`;
+      }
+      renderPipeline1Results(data);
+    }
+
+    function renderPipeline1Results(data) {
+      document.getElementById('p1-results').classList.remove('hidden');
+
+      const banner = document.getElementById('p1-status-banner');
+      const noFlows = !data.flow_info || data.total_flows_count === 0 ||
+                      data.status === "IDLE" || data.status === "CAPTURE_ERROR";
+
+      // Never render a fabricated benign "idle-window" verdict.  An empty
+      // capture window has no NIDS prediction and is reported as IDLE/ERROR.
+      if (noFlows) {
+        const isCaptureError = data.status === "CAPTURE_ERROR";
+        banner.className = (isCaptureError ? "badge-alert" : "badge-warning") +
+          " rounded-xl p-4 flex items-center justify-between";
+        banner.innerHTML = `
+          <div>
+            <h3 class="text-sm font-bold ${isCaptureError ? 'text-red-400' : 'text-amber-300'}">
+              ${isCaptureError ? '⚠️ PIPELINE 1 CAPTURE FAILED' : '⏸️ PIPELINE 1 IDLE: NO FLOWS CAPTURED'}
+            </h3>
+            <p class="text-xs text-gray-300 mt-0.5">${data.message || 'No IP flows were observed in this capture window.'}</p>
+            <p class="text-[11px] text-gray-400 mt-1">No verdict, probability, or latency is shown for an empty window.</p>
+          </div>
+          <div class="text-right mono text-xs">
+            <div>Status: <span class="font-bold">${data.status}</span></div>
+            <div class="text-gray-400">${data.timestamp}</div>
+          </div>
+        `;
+
+        document.getElementById('p1-flow-id').textContent = "No flow captured";
+        document.getElementById('p1-src-ip').textContent = "—";
+        document.getElementById('p1-src-port').textContent = "—";
+        document.getElementById('p1-dst-ip').textContent = "—";
+        document.getElementById('p1-dst-port').textContent = "—";
+        document.getElementById('p1-proto').textContent = "—";
+        document.getElementById('p1-flow-timestamp').textContent = "Timestamp: " + data.timestamp;
+
+        const vText = document.getElementById('p1-verdict-text');
+        vText.textContent = "NO VERDICT";
+        vText.className = "text-sm font-bold text-amber-300";
+        document.getElementById('p1-attack-type').textContent = "—";
+        document.getElementById('p1-prob').textContent = "—";
+        document.getElementById('p1-nids-latency').textContent = "Latency: —";
+        document.getElementById('p1-shap-list').innerHTML =
+          '<div class="text-gray-400 text-[11px] p-1.5">No SHAP evidence: the NIDS did not evaluate a flow.</div>';
+        document.getElementById('p1-llama-prompt').textContent =
+          "LLaMA Prompt 1 not constructed: no attack flow was detected in this window.";
+        document.getElementById('p1-advisory-box').textContent = data.message ||
+          "No flow was captured. Check dumpcap installation and packet-capture permissions.";
+
+        const cleanJson = Object.assign({}, data);
+        delete cleanJson.llama_prompt;
+        delete cleanJson.llama_advisory;
+        document.getElementById('p1-telemetry-json').textContent = JSON.stringify(cleanJson, null, 2);
+        return;
+      }
+
       const isAlert = data.status === "ALERT";
-      const banner = document.getElementById('status-banner');
       banner.className = isAlert 
-        ? "badge-alert rounded-xl p-4 flex items-center justify-between"
+        ? "badge-alert rounded-xl p-4 flex items-center justify-between" 
         : "badge-clean rounded-xl p-4 flex items-center justify-between";
       banner.innerHTML = `
         <div>
-          <h3 class="text-base font-bold ${isAlert ? 'text-red-400' : 'text-emerald-400'}">${isAlert ? '🚨 THREAT ALERT' : '✅ SYSTEM CLEAN'}</h3>
-          <p class="text-xs text-gray-300 mt-0.5">${data.active_threats_count} active threat vector(s) identified by edge ensemble.</p>
+          <h3 class="text-sm font-bold ${isAlert ? 'text-red-400' : 'text-emerald-400'}">${isAlert ? '🚨 PIPELINE 1 ALERT: INTRUSION FLAGGED (Passed to LLaMA)' : '✅ PIPELINE 1 CLEAN: BENIGN FLOW (Model Output - LLaMA Bypassed)'}</h3>
+          <p class="text-xs text-gray-300 mt-0.5">NIDS evaluated flow: verdict <strong>${data.attack_type}</strong> (prob: ${(data.attack_probability * 100).toFixed(1)}%). Routing: <strong>${data.output_type ? data.output_type.toUpperCase() : (isAlert ? 'LLAMA_OUTPUT' : 'MODEL_OUTPUT')}</strong>.</p>
         </div>
         <div class="text-right mono text-xs">
           <div>Status: <span class="font-bold">${data.status}</span></div>
@@ -360,136 +672,161 @@
         </div>
       `;
 
-      // Findings Grid
-      const grid = document.getElementById('findings-grid');
-      grid.innerHTML = '';
-      data.findings.forEach((f, i) => {
-        let card = document.createElement('div');
-        card.className = "bg-gray-900 border border-gray-800 rounded-xl p-4";
-        if (f.module === "SMS_Spam_Detector") {
-          card.innerHTML = `
-            <div class="text-xs text-cyan-400 font-semibold mb-1">Module 1: SMS Threat Classifier</div>
-            <div class="text-sm font-bold ${f.is_threat ? 'text-red-400' : 'text-emerald-400'}">${f.is_threat ? 'THREAT (SPAM)' : 'BENIGN (HAM)'}</div>
-            <div class="text-xs text-gray-400 mt-2">Threat Score: ${(f.threat_score*100).toFixed(1)}% (tau=${f.decision_threshold})</div>
-            <div class="text-xs text-gray-400">Triggers: ${f.detected_triggers.join(', ') || 'None'}</div>
-            <div class="text-xs text-gray-500 mt-2 mono">Latency: ${f.latency_ms} ms</div>
-          `;
-        } else if (f.module === "PhishGuard_URL_Detector") {
-          card.innerHTML = `
-            <div class="text-xs text-cyan-400 font-semibold mb-1">Module 2: PhishGuard URL</div>
-            <div class="text-sm font-bold ${f.is_phishing ? 'text-red-400' : 'text-emerald-400'}">${f.is_phishing ? 'MALICIOUS PHISHING' : 'BENIGN URL'}</div>
-            <div class="text-xs text-gray-400 mt-2">Confidence: ${(f.confidence_score*100).toFixed(1)}%</div>
-            <div class="text-xs text-gray-400 truncate">URL: ${f.url}</div>
-            <div class="text-xs text-gray-500 mt-2 mono">MLP Latency: ${f.latency_ms} ms</div>
-          `;
-        } else if (f.module === "Network_NIDS") {
-          card.innerHTML = `
-            <div class="text-xs text-cyan-400 font-semibold mb-1">Module 3: Edge NIDS</div>
-            <div class="text-sm font-bold ${f.is_attack ? 'text-red-400' : 'text-emerald-400'}">${f.attack_type}</div>
-            <div class="text-xs text-gray-400 mt-2">Prob: ${(f.attack_probability*100).toFixed(1)}% (tau=${f.decision_threshold})</div>
-            <div class="text-xs text-gray-400">Flow: ${f.flow_id} (${f.protocol})</div>
-            <div class="text-xs text-gray-500 mt-2 mono">XGBoost+SHAP: ${f.latency_ms} ms</div>
-          `;
-        }
-        grid.appendChild(card);
-      });
+      // Step 1: Flow Info
+      const fi = data.flow_info || {};
+      document.getElementById('p1-flow-id').textContent = fi.flow_id || "Live Ingested Flow";
+      document.getElementById('p1-src-ip').textContent = fi.src_ip || "10.0.0.1";
+      document.getElementById('p1-src-port').textContent = fi.src_port || "0";
+      document.getElementById('p1-dst-ip').textContent = fi.dst_ip || "10.0.0.2";
+      document.getElementById('p1-dst-port').textContent = fi.dst_port || "0";
+      document.getElementById('p1-proto').textContent = fi.protocol || "TCP";
+      document.getElementById('p1-flow-timestamp').textContent = "Timestamp: " + data.timestamp;
 
-      // Dedicated Llama 3.2 Advisory Container
-      const advisoryCard = document.getElementById('llama-advisory-card');
-      const advisoryBox = document.getElementById('llama-advisory-box');
-      if (data.llama_advisory) {
-        advisoryCard.classList.remove('hidden');
-        advisoryBox.textContent = data.llama_advisory;
-      } else {
-        advisoryCard.classList.add('hidden');
-        advisoryBox.textContent = '';
-      }
+      // Step 2: NIDS Verdict
+      const vText = document.getElementById('p1-verdict-text');
+      vText.textContent = data.is_attack ? "ATTACK FLAGGED" : "BENIGN FLOW";
+      vText.className = data.is_attack ? "text-sm font-bold text-red-400" : "text-sm font-bold text-emerald-400";
+      document.getElementById('p1-attack-type').textContent = data.attack_type;
+      document.getElementById('p1-prob').textContent = (data.attack_probability * 100).toFixed(2) + "%";
+      document.getElementById('p1-nids-latency').textContent = "Latency: " + data.latency_ms + " ms";
 
-      // Standardized JSON
-      const cleanJson = Object.assign({}, data);
-      delete cleanJson.llama_prompt;
-      document.getElementById('telemetry-json').textContent = JSON.stringify(cleanJson, null, 2);
-      document.getElementById('executorch-prompt').textContent = data.llama_prompt || "";
-    }
-
-    async function runSmsAnalysis() {
-      const text = document.getElementById('standalone-sms-input').value;
-      const res = await fetch('/api/analyze/sms', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ message: text })
-      });
-      const data = await res.json();
-      const f = data.findings[0];
-      document.getElementById('sms-results').classList.remove('hidden');
-      document.getElementById('sms-verdict').textContent = f.is_threat ? "THREAT (SPAM)" : "BENIGN (HAM)";
-      document.getElementById('sms-verdict').className = f.is_threat ? "text-base font-bold text-red-400 mt-1" : "text-base font-bold text-emerald-400 mt-1";
-      document.getElementById('sms-score').textContent = (f.threat_score * 100).toFixed(2) + "%";
-      document.getElementById('sms-level').textContent = f.threat_level;
-      document.getElementById('sms-latency').textContent = f.latency_ms + " ms";
-      document.getElementById('sms-raw').textContent = f.raw_text;
-      document.getElementById('sms-norm').textContent = f.normalized_text;
-    }
-
-    async function runUrlAnalysis() {
-      const u = document.getElementById('standalone-url-input').value;
-      const res = await fetch('/api/analyze/url', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ url: u })
-      });
-      const data = await res.json();
-      const f = data.findings[0];
-      document.getElementById('url-results').classList.remove('hidden');
-      document.getElementById('url-verdict').textContent = f.is_phishing ? "PHISHING" : "BENIGN";
-      document.getElementById('url-verdict').className = f.is_phishing ? "text-base font-bold text-red-400 mt-1" : "text-base font-bold text-emerald-400 mt-1";
-      document.getElementById('url-conf').textContent = (f.confidence_score * 100).toFixed(2) + "%";
-      document.getElementById('url-benign').textContent = (f.benign_score * 100).toFixed(2) + "%";
-      document.getElementById('url-latency').textContent = f.latency_ms + " ms";
-      
-      const ul = document.getElementById('url-anomalies');
-      ul.innerHTML = '';
-      f.domain_anomalies.forEach(a => {
-        let li = document.createElement('li');
-        li.textContent = "• " + a;
-        ul.appendChild(li);
-      });
-    }
-
-    async function runNidsAnalysis() {
-      const idx = parseInt(document.getElementById('nids-flow-idx').value);
-      const flow = cachedFlows[idx] || null;
-      if (!flow) {
-        alert("Flow data not loaded yet.");
-        return;
-      }
-      const res = await fetch('/api/analyze/flow', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ flow: flow })
-      });
-      const data = await res.json();
-      const f = data.findings[0];
-      document.getElementById('nids-results').classList.remove('hidden');
-      document.getElementById('nids-verdict').textContent = f.is_attack ? "ATTACK" : "BENIGN";
-      document.getElementById('nids-verdict').className = f.is_attack ? "text-base font-bold text-red-400 mt-1" : "text-base font-bold text-emerald-400 mt-1";
-      document.getElementById('nids-type').textContent = f.attack_type;
-      document.getElementById('nids-prob').textContent = (f.attack_probability * 100).toFixed(2) + "%";
-      document.getElementById('nids-latency').textContent = f.latency_ms + " ms";
-
-      const shapDiv = document.getElementById('nids-shap-table');
-      shapDiv.innerHTML = '';
-      (f.shap_evidence || []).forEach(e => {
-        let row = document.createElement('div');
+      // Step 2b: SHAP List
+      const shapList = document.getElementById('p1-shap-list');
+      shapList.innerHTML = '';
+      (data.shap_evidence || []).forEach(e => {
         const sign = e.shap_value > 0 ? "+" : "";
         const color = e.shap_value > 0 ? "text-red-400" : "text-blue-400";
-        row.className = "flex items-center justify-between p-2 bg-gray-950 rounded";
-        row.innerHTML = `
-          <span class="text-gray-300">${e.feature} = ${e.value}</span>
-          <span class="${color} font-bold">SHAP: ${sign}${e.shap_value.toFixed(4)}</span>
+        const div = document.createElement('div');
+        div.className = "flex items-center justify-between p-1.5 bg-gray-950 rounded border border-gray-900";
+        div.innerHTML = `
+          <span class="text-gray-300 truncate">${e.feature} = ${e.value}</span>
+          <span class="${color} font-bold whitespace-nowrap">SHAP: ${sign}${e.shap_value.toFixed(4)}</span>
         `;
-        shapDiv.appendChild(row);
+        shapList.appendChild(div);
       });
+
+      // Step 3: Llama Prompt 1
+      if (data.is_attack) {
+        document.getElementById('p1-llama-prompt').textContent = data.llama_prompt || "Prompt not generated";
+      } else {
+        document.getElementById('p1-llama-prompt').textContent = "⚡ LLaMA Prompt 1 Bypassed: Flow is benign. Prompt is not constructed as traffic routes directly to Model Output.";
+      }
+
+      // Step 4: Advisory / Model Output
+      if (data.is_attack) {
+        document.getElementById('p1-advisory-box').textContent = data.llama_advisory || "LLM reasoning disabled or offline.";
+      } else {
+        document.getElementById('p1-advisory-box').textContent = "🛡️ NIDS Pure Model Output:\n• Verdict: Benign\n• Classification: Benign\n• Confidence: " + ((data.confidence || 1.0) * 100).toFixed(2) + "%\n• Attack Probability: " + ((data.attack_probability || 0.0) * 100).toFixed(4) + "%\n• Latency: " + (data.latency_ms || 0.0) + " ms\n• Routing: LLaMA reasoning bypassed to conserve edge CPU & power.";
+      }
+
+      // Step 5: JSON Schema
+      const cleanJson = Object.assign({}, data);
+      delete cleanJson.llama_prompt;
+      delete cleanJson.llama_advisory;
+      document.getElementById('p1-telemetry-json').textContent = JSON.stringify(cleanJson, null, 2);
+    }
+
+    // -------------------------------------------------------------------------
+    // PIPELINE 2 EXECUTION (User Input -> SMS -> Extract URL -> PhishGuard -> Prompt 2 -> Output)
+    // -------------------------------------------------------------------------
+    function setP2Preset(preset) {
+      const box = document.getElementById('p2-sms-input');
+      if (preset === 'smish') {
+        box.value = "URGENT: Your SBI account has been locked. Update KYC immediately: http://sbi-banking-verify-update.xyz/login.php?user=victim";
+      } else if (preset === 'lottery') {
+        box.value = "Congratulations! You won ₹50,000 cash reward. Claim free prize at: https://bit.ly/claim-prize-now";
+      } else if (preset === 'obfuscated') {
+        box.value = "Your b@nk a.c.c.o.u.n.t is b l o c k e d. Click k-y-c link to update up1: http://bank-update.top";
+      } else {
+        box.value = "Hey, are you free for lunch today at 1pm at the cafeteria?";
+      }
+    }
+
+    async function runPipeline2() {
+      const inputVal = document.getElementById('p2-sms-input').value;
+      const enableLlama = document.getElementById('p2-toggle-llama').checked;
+
+      const res = await fetch('/api/pipeline2', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          user_input: inputVal,
+          enable_llm_reasoning: enableLlama
+        })
+      });
+      const data = await res.json();
+      renderPipeline2Results(data);
+    }
+
+    function renderPipeline2Results(data) {
+      document.getElementById('p2-results').classList.remove('hidden');
+
+      const isAlert = data.status === "ALERT";
+      const banner = document.getElementById('p2-status-banner');
+      banner.className = isAlert 
+        ? "badge-alert rounded-xl p-4 flex items-center justify-between" 
+        : "badge-clean rounded-xl p-4 flex items-center justify-between";
+      banner.innerHTML = `
+        <div>
+          <h3 class="text-sm font-bold ${isAlert ? 'text-red-400' : 'text-emerald-400'}">${isAlert ? '🚨 PIPELINE 2 ALERT: DECEPTIVE THREAT DETECTED' : '✅ PIPELINE 2 CLEAN: SAFE MESSAGE'}</h3>
+          <p class="text-xs text-gray-300 mt-0.5">${data.active_threats_count} active threat vector(s) identified across text and extracted web links.</p>
+        </div>
+        <div class="text-right mono text-xs">
+          <div>Status: <span class="font-bold">${data.status}</span></div>
+          <div class="text-gray-400">${data.timestamp}</div>
+        </div>
+      `;
+
+      // Step 1: Text De-obfuscation
+      const sms = data.sms_telemetry || {};
+      document.getElementById('p2-norm-text').textContent = sms.normalized_text || data.user_input || "N/A";
+
+      // Step 2: SMS Detector
+      const sVerdict = document.getElementById('p2-sms-verdict');
+      sVerdict.textContent = sms.is_threat ? "THREAT (SPAM)" : "BENIGN (HAM)";
+      sVerdict.className = sms.is_threat ? "text-sm font-bold text-red-400" : "text-sm font-bold text-emerald-400";
+      document.getElementById('p2-sms-score').textContent = ((sms.threat_score || 0) * 100).toFixed(1) + "%";
+      document.getElementById('p2-sms-level').textContent = sms.threat_level || "LOW";
+      document.getElementById('p2-sms-triggers').textContent = (sms.detected_triggers || []).join(', ') || 'None';
+      document.getElementById('p2-sms-latency').textContent = "Latency: " + (sms.latency_ms || 0) + " ms";
+
+      // Step 3: Extracted URLs
+      const urlsBox = document.getElementById('p2-extracted-urls');
+      if (data.extracted_urls && data.extracted_urls.length > 0) {
+        urlsBox.innerHTML = data.extracted_urls.map(u => `<div>🔗 <span class="text-cyan-300">${u}</span></div>`).join('');
+      } else {
+        urlsBox.innerHTML = '<span class="text-gray-500">No embedded URLs found in text.</span>';
+      }
+
+      // Step 4: PhishGuard URL Detector
+      const urlList = data.url_telemetry || [];
+      if (urlList.length > 0) {
+        const u = urlList[0];
+        const uVerdict = document.getElementById('p2-url-verdict');
+        uVerdict.textContent = u.is_phishing ? "MALICIOUS PHISHING" : "BENIGN URL";
+        uVerdict.className = u.is_phishing ? "text-sm font-bold text-red-400" : "text-sm font-bold text-emerald-400";
+        document.getElementById('p2-url-conf').textContent = ((u.confidence_score || 0) * 100).toFixed(1) + "%";
+        document.getElementById('p2-url-anom-count').textContent = (u.domain_anomalies || []).length + " flagged";
+        document.getElementById('p2-url-latency').textContent = "Latency: " + (u.latency_ms || 0) + " ms";
+      } else {
+        document.getElementById('p2-url-verdict').textContent = "N/A (No URL)";
+        document.getElementById('p2-url-verdict').className = "text-sm font-bold text-gray-500";
+        document.getElementById('p2-url-conf').textContent = "0.0%";
+        document.getElementById('p2-url-anom-count').textContent = "0";
+        document.getElementById('p2-url-latency').textContent = "Latency: 0 ms";
+      }
+
+      // Step 5: Llama Prompt 2
+      document.getElementById('p2-llama-prompt').textContent = data.llama_prompt || "Prompt not generated";
+
+      // Step 6: Advisory
+      document.getElementById('p2-advisory-box').textContent = data.llama_advisory || "LLM reasoning disabled or offline.";
+
+      // Step 7: JSON Schema
+      const cleanJson = Object.assign({}, data);
+      delete cleanJson.llama_prompt;
+      delete cleanJson.llama_advisory;
+      document.getElementById('p2-telemetry-json').textContent = JSON.stringify(cleanJson, null, 2);
     }
   </script>
 </body>

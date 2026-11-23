@@ -26,6 +26,33 @@ SYSTEM_PROMPT = (
     "   - 🛡️ **Recommended Actions:** Exactly 3 clear safety steps the user should take."
 )
 
+# Pipeline 1: Live Network -> NIDS -> Llama Prompt 1 (Input: NIDS telemetry for attack) -> Output
+SYSTEM_PROMPT_PIPELINE_1 = (
+    "You are the on-device network security assistant for Abhedya SoC.\n"
+    "Your job is to translate technical live network intrusion detection telemetry from the on-device NIDS "
+    "(13-class XGBoost classifier and SHAP mathematical explainability engine) into a simple, "
+    "plain-English advisory for security operators and non-technical users.\n\n"
+    "STRICT RULES:\n"
+    "1. Ground your answer strictly in the provided NIDS telemetry. Never invent attacks or IP addresses not present in the payload.\n"
+    "2. Output a 3-part structured alert:\n"
+    "   - ⚠️ **Threat Summary:** What network intrusion was detected in plain English.\n"
+    "   - 🔍 **Technical Reason:** Why it is dangerous (explain flow anomalies, target ports/protocols, and top SHAP feature attributions simply).\n"
+    "   - 🛡️ **Recommended Actions:** Exactly 3 clear network containment/mitigation steps the operator should take."
+)
+
+# Pipeline 2: User Input -> SMS Scam Detector -> Extract URL -> PhishGuard URL Detector -> Llama Prompt 2 (Input: SMS + PhishGuard telemetry) -> Output
+SYSTEM_PROMPT_PIPELINE_2 = (
+    "You are the on-device communication & web security assistant for Abhedya SoC.\n"
+    "Your job is to translate technical threat telemetry from user input analysis—correlating the on-device "
+    "SMS Scam Detector and the PhishGuard URL Detector—into a simple, plain-English advisory for end users.\n\n"
+    "STRICT RULES:\n"
+    "1. Ground your answer strictly in the provided SMS and PhishGuard URL telemetry. Never invent threats or links not present in the payload.\n"
+    "2. Output a 3-part structured alert:\n"
+    "   - ⚠️ **Threat Summary:** What deceptive scam or phishing attempt was detected in plain English.\n"
+    "   - 🔍 **Technical Reason:** Why it is dangerous (explain text obfuscation, urgency triggers, high-risk TLDs, and domain anomalies simply).\n"
+    "   - 🛡️ **Recommended Actions:** Exactly 3 clear safety steps the user should take."
+)
+
 
 def format_telemetry_for_prompt(telemetry_json: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -75,13 +102,93 @@ def format_telemetry_for_prompt(telemetry_json: Dict[str, Any]) -> Dict[str, Any
     return clean_dict
 
 
-def build_llama_prompt(telemetry_json: Dict[str, Any]) -> str:
+def build_llama_prompt_pipeline_1(nids_telemetry: Dict[str, Any]) -> str:
+    """
+    Pipeline 1 Prompt Constructor:
+    Live Network -> NIDS -> Llama Prompt 1 (Input: NIDS: ~ NIDS telemetry output (for attack)) -> Output
+    """
+    clean_telemetry = format_telemetry_for_prompt(nids_telemetry)
+    attack_findings = [f for f in clean_telemetry.get("findings", []) if f.get("is_attack")]
+    telemetry_to_prompt = dict(clean_telemetry)
+    if attack_findings:
+        telemetry_to_prompt["nids_attack_telemetry"] = attack_findings
+    json_str = json.dumps(telemetry_to_prompt, indent=2)
+    return (
+        "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n"
+        f"{SYSTEM_PROMPT_PIPELINE_1}<|eot_id|>\n"
+        "<|start_header_id|>user<|end_header_id|>\n\n"
+        "Review the following live network intrusion detection (NIDS) telemetry output (for attack) and generate the plain-language safety alert:\n\n"
+        "Input: NIDS: ~ NIDS telemetry output (for attack)\n"
+        "```json\n"
+        f"{json_str}\n"
+        "```\n<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n"
+    )
+
+# Alias for Pipeline 1
+build_llama_prompt_1 = build_llama_prompt_pipeline_1
+
+
+def build_llama_prompt_pipeline_2(
+    sms_telemetry: Dict[str, Any],
+    url_telemetry: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None
+) -> str:
+    """
+    Pipeline 2 Prompt Constructor:
+    User Input -> SMS Scam Detector -> Extract URL -> PhishGuard URL Detector -> Llama Prompt 2 (Input: ~ SMS Scam Detector telemetry output ~ PhishGuard URL Detector telemetry output) -> Output
+    """
+    if "findings" in sms_telemetry:
+        combined_payload = dict(sms_telemetry)
+    else:
+        findings = [sms_telemetry]
+        if url_telemetry:
+            if isinstance(url_telemetry, list):
+                findings.extend(url_telemetry)
+            else:
+                findings.append(url_telemetry)
+        active_count = sum(1 for f in findings if f.get("is_threat") or f.get("is_phishing"))
+        combined_payload = {
+            "status": "ALERT" if active_count > 0 else "CLEAN",
+            "active_threats_count": active_count,
+            "findings": findings
+        }
+
+    clean_telemetry = format_telemetry_for_prompt(combined_payload)
+    json_str = json.dumps(clean_telemetry, indent=2)
+    return (
+        "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n"
+        f"{SYSTEM_PROMPT_PIPELINE_2}<|eot_id|>\n"
+        "<|start_header_id|>user<|end_header_id|>\n\n"
+        "Review the following user input threat telemetry (~ SMS Scam Detector telemetry output ~ PhishGuard URL Detector telemetry output) and generate the plain-language safety alert:\n\n"
+        "Input: ~ SMS Scam Detector telemetry output ~ PhishGuard URL Detector telemetry output\n"
+        "```json\n"
+        f"{json_str}\n"
+        "```\n<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n"
+    )
+
+# Alias for Pipeline 2
+build_llama_prompt_2 = build_llama_prompt_pipeline_2
+
+
+def build_llama_prompt(telemetry_json: Dict[str, Any], pipeline_type: Optional[int] = None) -> str:
     """
     Constructs the zero-shot Llama-3.2 Chat prompt matching ExecuTorch token contract:
     <|begin_of_text|><|start_header_id|>system<|end_header_id|> ... <|eot_id|>
     <|start_header_id|>user<|end_header_id|> ... <|eot_id|>
     <|start_header_id|>assistant<|end_header_id|>
+
+    Supports:
+    - pipeline_type=1: Pipeline 1 (Live Network -> NIDS -> Prompt 1)
+    - pipeline_type=2: Pipeline 2 (User Input -> SMS -> Extract URL -> PhishGuard -> Prompt 2)
+    - Auto-detection: Routes to Pipeline 1 or Pipeline 2 prompt constructor based on findings payload.
     """
+    findings = telemetry_json.get("findings", [])
+    modules_present = {f.get("module") for f in findings if f.get("module")}
+
+    if pipeline_type == 1 or (modules_present == {"Network_NIDS"}):
+        return build_llama_prompt_pipeline_1(telemetry_json)
+    elif pipeline_type == 2 or (modules_present and modules_present.issubset({"SMS_Spam_Detector", "PhishGuard_URL_Detector"})):
+        return build_llama_prompt_pipeline_2(telemetry_json)
+
     clean_telemetry = format_telemetry_for_prompt(telemetry_json)
     json_str = json.dumps(clean_telemetry, indent=2)
 

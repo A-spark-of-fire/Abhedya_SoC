@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 import ipaddress
 import json
@@ -47,7 +47,6 @@ except Exception:
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
 
-import dpkt
 import joblib
 import numpy as np
 import pandas as pd
@@ -69,6 +68,20 @@ for p in [WORKSPACE_ROOT, MODULES_DIR, SMS_DIR, PHISH_DIR, NIDS_DIR]:
     p_str = str(p)
     if p.exists() and p_str not in sys.path:
         sys.path.insert(0, p_str)
+
+# NTLFlowLyzer is the single, mandatory flow-extraction engine for every
+# network capture in this pipeline.  The NIDS submodule owns the feature
+# contract, column mapping, pcap/pcapng conversion, and extractor execution.
+try:
+    from features.contract import ALL_FEATURES
+    from features.ntlflowlyzer import NTLFlowLyzerError, NTLFlowLyzerRunner
+except ImportError as _nids_import_error:  # pragma: no cover - deployment error
+    raise RuntimeError(
+        "The NIDS submodule (modules/nids) is required: network captures are "
+        "parsed exclusively by NTLFlowLyzer. Initialise the submodule with "
+        "`git submodule update --init --recursive` and install NTLFlowLyzer "
+        "inside modules/nids (see modules/nids/README.md)."
+    ) from _nids_import_error
 
 logger = logging.getLogger("unified_pipeline")
 if not logger.handlers:
@@ -497,7 +510,39 @@ class LiveCaptureError(RuntimeError):
     Callers should surface this message to the operator instead of pretending a
     benign flow was observed.  An *empty* capture (no packets in the window) is
     not an error and is returned as an empty DataFrame.
+
+    ``stderr`` preserves the original tool diagnostic (dumpcap or
+    NTLFlowLyzer) so the pipeline can return it verbatim as ``capture_error``.
     """
+
+    def __init__(self, message: str, *, stderr: Optional[str] = None) -> None:
+        super().__init__(message)
+        self.stderr = stderr
+
+    @property
+    def diagnostic(self) -> str:
+        """Exact underlying tool diagnostic, or the full message as fallback."""
+        return (self.stderr or str(self)).strip()
+
+
+def _capture_diagnostic(exc: BaseException) -> str:
+    """Return the raw tool stderr when available, else the full exception text.
+
+    ``NTLFlowLyzerRunner`` embeds subprocess stderr after the ``"): "`` marker
+    in its error message, so unwrap that tail to honour the pipeline contract
+    of returning the exact extractor diagnostic.
+    """
+
+    stderr = getattr(exc, "stderr", None)
+    if stderr:
+        return str(stderr).strip()
+    message = str(exc).strip()
+    marker = "): "
+    if marker in message:
+        tail = message.rsplit(marker, 1)[1].strip()
+        if tail:
+            return tail
+    return message
 
 
 _DUMPCAP_FALLBACK_PATHS = (
@@ -548,15 +593,155 @@ def _dumpcap_pcap_flags(dumpcap_bin: str) -> List[str]:
     return []
 
 
-def _short_dumpcap_error(text: str) -> str:
-    """Collapse dumpcap's multi-screen usage dump into the useful first line."""
+# ---------------------------------------------------------------------
+# Capture preflight: distinguish a genuinely empty window from an error.
+# This only counts packets; it never reconstructs flows or fabricates
+# feature columns.  Actual feature extraction is always NTLFlowLyzer.
+# ---------------------------------------------------------------------
 
-    text = (text or "").strip()
-    marker = text.find("Usage: dumpcap")
-    if marker >= 0:
-        head = text[:marker].strip()
-        return f"{head} (dumpcap rejected the command line)".strip()
-    return text
+_PCAP_MAGIC_ENDIAN = {
+    b"\xd4\xc3\xb2\xa1": "little",  # little-endian, microsecond timestamps
+    b"\x4d\x3c\xb2\xa1": "little",  # little-endian, nanosecond timestamps
+    b"\xa1\xb2\xc3\xd4": "big",     # big-endian, microsecond timestamps
+    b"\xa1\xb2\x3c\x4d": "big",     # big-endian, nanosecond timestamps
+}
+_PCAPNG_MAGIC = b"\x0a\x0d\x0d\x0a"
+_PCAPNG_BOM = {
+    b"\x4d\x3c\x2b\x1a": "little",
+    b"\x1a\x2b\x3c\x4d": "big",
+}
+
+
+def _pcap_has_packets(path: Path, magic: bytes) -> Optional[bool]:
+    """Return whether the classic-pcap file has at least one packet record."""
+
+    endian = _PCAP_MAGIC_ENDIAN[magic]
+    try:
+        with path.open("rb") as handle:
+            handle.read(24)  # global header
+            while True:
+                record = handle.read(16)
+                if len(record) < 16:
+                    return False
+                incl_len = int.from_bytes(record[8:12], endian)
+                handle.seek(incl_len, 1)
+                return True
+    except OSError:
+        return None
+
+
+def _pcapng_has_packets(path: Path) -> Optional[bool]:
+    """Return whether the pcapng file has at least one packet block."""
+
+    endian: Optional[str] = None
+    try:
+        with path.open("rb") as handle:
+            while True:
+                header = handle.read(8)
+                if len(header) < 8:
+                    return False
+                block_type_raw = header[:4]
+                if block_type_raw == _PCAPNG_MAGIC:
+                    bom = handle.read(4)
+                    if len(bom) < 4:
+                        return False
+                    endian = _PCAPNG_BOM.get(bom)
+                    if endian is None:
+                        return None
+                    total_len = int.from_bytes(header[4:8], endian)
+                    if total_len < 12:
+                        return False
+                    handle.seek(total_len - 12, 1)
+                    continue
+                if endian is None:
+                    return None
+                block_type = int.from_bytes(block_type_raw, endian)
+                total_len = int.from_bytes(header[4:8], endian)
+                if total_len < 12:
+                    return False
+                # Enhanced Packet Block (6), Simple Packet Block (3), and
+                # obsolete Packet Block (2) each hold exactly one packet.
+                if block_type in (2, 3, 6):
+                    return True
+                handle.seek(total_len - 8, 1)
+    except OSError:
+        return None
+
+
+def _capture_is_empty(pcap_path: Path) -> bool:
+    """Return True only when a valid capture contains zero packet records."""
+
+    try:
+        size = pcap_path.stat().st_size
+        with pcap_path.open("rb") as handle:
+            magic = handle.read(4)
+    except OSError:
+        return False
+
+    if size == 0:
+        return True
+    if magic in _PCAP_MAGIC_ENDIAN:
+        if size < 24:  # truncated header: let NTLFlowLyzer report the error
+            return False
+        return _pcap_has_packets(pcap_path, magic) is False
+    if magic == _PCAPNG_MAGIC:
+        if size < 28:  # truncated Section Header Block
+            return False
+        return _pcapng_has_packets(pcap_path) is False
+    return False
+
+
+def _ntlflowlyzer_settings():
+    """Build settings from the NIDS environment (honours NIDS_NTLFLOWLYZER)."""
+
+    from config import Settings
+
+    return Settings.from_env()
+
+
+def extract_flows_with_ntlflowlyzer(
+    pcap_path: Union[str, Path],
+    settings: Optional[Any] = None,
+) -> pd.DataFrame:
+    """Extract the full 121-feature contract from a capture using NTLFlowLyzer.
+
+    There is deliberately no DPkt/manual fallback here.  A capture that cannot
+    be parsed by NTLFlowLyzer raises :class:`NTLFlowLyzerError`; a valid
+    capture containing zero packets returns an empty contract-shaped frame.
+    """
+
+    pcap_path = Path(pcap_path)
+    if not pcap_path.exists():
+        raise NTLFlowLyzerError(f"Capture file not found: {pcap_path}")
+    if _capture_is_empty(pcap_path):
+        return pd.DataFrame(columns=ALL_FEATURES)
+
+    runner = NTLFlowLyzerRunner(settings or _ntlflowlyzer_settings())
+    return runner.run(pcap_path)
+
+
+def extract_flows_from_pcap(
+    pcap_path: Union[str, Path],
+    max_flows: Optional[int] = 50,
+) -> pd.DataFrame:
+    """Deprecated compatibility wrapper around NTLFlowLyzer.
+
+    The old DPkt implementation populated only a subset of the 121-column
+    contract and padded the rest with zeros.  This wrapper now runs the same
+    mandatory NTLFlowLyzer extractor as live capture and PCAP replay.
+    """
+
+    warnings.warn(
+        "extract_flows_from_pcap() is deprecated; use "
+        "extract_flows_with_ntlflowlyzer() so the full NTLFlowLyzer feature "
+        "contract is enforced.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    frame = extract_flows_with_ntlflowlyzer(pcap_path)
+    if max_flows is not None and max_flows > 0:
+        frame = frame.iloc[:max_flows].reset_index(drop=True)
+    return frame
 
 
 def get_available_interfaces() -> List[str]:
@@ -609,23 +794,31 @@ def get_dumpcap_info() -> Dict[str, Any]:
     return {"available": True, "path": dumpcap_bin, "version": version, "error": None}
 
 
-def capture_live_network(interface: str = "any", duration_seconds: int = 60, max_packets: Optional[int] = 50000) -> pd.DataFrame:
+def capture_live_network(
+    interface: str = "any",
+    duration_seconds: int = 60,
+    max_packets: Optional[int] = 50000,
+    settings: Optional[Any] = None,
+) -> pd.DataFrame:
     """
-    Capture real packets from a host interface with dumpcap and reconstruct
-    flows through the native DPkt extractor in a 1-minute window (default: 60s).
+    Capture real packets with dumpcap and extract flows with NTLFlowLyzer.
+
+    The capture window defaults to 1 minute (60s).  The resulting frame always
+    follows the exact 121-column NIDS contract produced by NTLFlowLyzer; no
+    column is padded or synthesized.
 
     Raises:
-        LiveCaptureError: dumpcap is missing, cannot start, or exits non-zero
-            (for example because the current user lacks packet-capture
-            permissions).  An idle window with zero packets is *not* an error;
-            it returns an empty frame so callers can report "no traffic".
+        LiveCaptureError: dumpcap or NTLFlowLyzer is missing, cannot start, or
+            exits non-zero (for example because the current user lacks
+            packet-capture permissions).  An idle window with zero packets is
+            *not* an error; it returns an empty frame so callers can report
+            "no traffic".
     """
-
-    from features.contract import ALL_FEATURES
 
     empty_frame = pd.DataFrame(columns=ALL_FEATURES)
     dumpcap_bin = _find_dumpcap()
     duration_seconds = max(1, int(duration_seconds))
+    settings = settings or _ntlflowlyzer_settings()
 
     temp_dir = Path(tempfile.mkdtemp(prefix="abhedya-capture-"))
     tmp_path = temp_dir / "live_capture.pcap"
@@ -650,19 +843,24 @@ def capture_live_network(interface: str = "any", duration_seconds: int = 60, max
                 timeout=duration_seconds + 10,
             )
         except FileNotFoundError as exc:
-            raise LiveCaptureError(f"dumpcap executable not found: {dumpcap_bin}") from exc
+            raise LiveCaptureError(
+                f"dumpcap executable not found: {dumpcap_bin}",
+                stderr=str(exc),
+            ) from exc
         except subprocess.TimeoutExpired as exc:
             raise LiveCaptureError(
                 f"dumpcap did not finish within {duration_seconds + 8}s on interface "
-                f"'{interface}'. The interface may be down or blocked by a permission prompt."
+                f"'{interface}'. The interface may be down or blocked by a permission prompt.",
+                stderr=str(exc),
             ) from exc
 
         if proc.returncode != 0:
-            detail = _short_dumpcap_error(proc.stderr or proc.stdout or "")
+            detail = (proc.stderr or proc.stdout or "").strip()
             raise LiveCaptureError(
                 f"dumpcap failed on interface '{interface}' (exit {proc.returncode}): "
                 f"{detail or 'unknown error'}. Check that the interface exists and that "
-                "your user has packet-capture permission (see README: Live Capture Troubleshooting)."
+                "your user has packet-capture permission (see README: Live Capture Troubleshooting).",
+                stderr=detail or f"dumpcap exited with status {proc.returncode}",
             )
 
         if not tmp_path.exists() or tmp_path.stat().st_size <= 24:
@@ -673,11 +871,18 @@ def capture_live_network(interface: str = "any", duration_seconds: int = 60, max
             )
             return empty_frame
 
-        flows = extract_flows_from_pcap(tmp_path)
+        try:
+            flows = extract_flows_with_ntlflowlyzer(tmp_path, settings=settings)
+        except NTLFlowLyzerError as exc:
+            raise LiveCaptureError(
+                f"NTLFlowLyzer failed on interface '{interface}': {exc}",
+                stderr=_capture_diagnostic(exc),
+            ) from exc
+
         if flows.empty:
             logger.warning(
-                "Captured packets on interface %s but no supported TCP/UDP IP flows "
-                "could be reconstructed.",
+                "Captured packets on interface %s but NTLFlowLyzer produced no "
+                "TCP/UDP flows.",
                 interface,
             )
         else:
@@ -713,13 +918,17 @@ class NetworkNIDS:
         self.detector_threshold = DETECTOR_THRESHOLD  # 0.3545
         self.classifier_labels = CLASSIFIER_LABELS
 
-        settings = Settings(
+        # Start from the deployment environment (so NIDS_NTLFLOWLYZER,
+        # timeouts, and thread counts are honoured) then pin submodule paths.
+        settings = replace(
+            Settings.from_env(),
             project_root=self.nids_root,
             model_dir=self.model_dir,
             knowledge_dir=self.nids_root / "explain" / "knowledge",
             capture_dir=self.nids_root / "capture" / "pcaps",
-            output_dir=self.nids_root / "capture" / "flows"
+            output_dir=self.nids_root / "capture" / "flows",
         )
+        self.settings = settings
         self.models = load_models(settings)
         self.engine = InferenceEngine(self.models)
         self.shap_service = ShapService(self.models)
@@ -790,269 +999,51 @@ class NetworkNIDS:
         df = pd.read_csv(csv_path, nrows=limit, low_memory=False)
         return self.predict_dataframe(df)
 
-    def capture_live_network(self, interface: str = "any", duration_seconds: int = 60, max_packets: Optional[int] = 50000) -> pd.DataFrame:
+    def capture_live_network(
+        self,
+        interface: str = "any",
+        duration_seconds: int = 60,
+        max_packets: Optional[int] = 50000,
+    ) -> pd.DataFrame:
         """
-        Captures real network packets on host interface using dumpcap in a 1-minute window (default: 60s),
-        extracts flow features via native DPkt, and returns a DataFrame.
+        Captures real network packets on host interface using dumpcap in a
+        1-minute window (default: 60s) and extracts the full 121-feature
+        contract with NTLFlowLyzer.
         """
-        return capture_live_network(interface=interface, duration_seconds=duration_seconds, max_packets=max_packets)
+        return capture_live_network(
+            interface=interface,
+            duration_seconds=duration_seconds,
+            max_packets=max_packets,
+            settings=self.settings,
+        )
 
-    def predict_pcap(self, pcap_path: Union[str, Path], output_csv: Optional[Path] = None) -> List[Dict[str, Any]]:
-        """Replay real PCAP/PCAPNG file through DPkt flow extractor or NTLFlowLyzer runner."""
+    def extract_pcap_flows(self, pcap_path: Union[str, Path]) -> pd.DataFrame:
+        """Run NTLFlowLyzer on a PCAP/PCAPNG and return contract-shaped rows."""
+
         pcap_path = Path(pcap_path)
         if not pcap_path.exists():
             raise FileNotFoundError(f"PCAP not found: {pcap_path}")
+        return extract_flows_with_ntlflowlyzer(pcap_path, settings=self.settings)
 
-        try:
-            from features.ntlflowlyzer import NTLFlowLyzerRunner
-            from config import Settings
-            settings = Settings()
-            runner = NTLFlowLyzerRunner(settings)
-            out_df = runner.extract(pcap_path)
-            return self.predict_dataframe(out_df)
-        except Exception:
-            df = extract_flows_from_pcap(pcap_path)
-            if not df.empty:
-                return self.predict_dataframe(df)
-            from features.contract import ALL_FEATURES
-            return self.predict_dataframe(pd.DataFrame(columns=ALL_FEATURES))
+    def predict_pcap(
+        self,
+        pcap_path: Union[str, Path],
+        output_csv: Optional[Path] = None,
+    ) -> List[Dict[str, Any]]:
+        """Replay a PCAP/PCAPNG through NTLFlowLyzer, then run NIDS inference.
 
+        NTLFlowLyzer is mandatory.  Extractor failures propagate as
+        :class:`NTLFlowLyzerError`; there is no partial DPkt fallback.
+        """
 
-def _decode_link_layer(buf: bytes, linktype: Optional[int] = None) -> Optional[Any]:
-    """Decode a captured frame into a DPkt IPv4/IPv6 packet.
-
-    Live ``dumpcap -i any`` captures use Linux cooked headers (SLL/SLL2) while
-    interface captures usually use Ethernet.  Reading the pcap link type avoids
-    relying on trial-and-error decoding, which can silently drop every packet
-    (and make the dashboard look like an idle window) on SLL2 captures.
-    """
-
-    # DLT values: EN10MB=1, RAW=12/101, NULL=0, LOOP=108, LINUX_SLL=113,
-    # LINUX_SLL2=276, IPV4=228, IPV6=229.
-    if linktype == 1:
-        decoders = [dpkt.ethernet.Ethernet]
-    elif linktype == 113:
-        decoders = [dpkt.sll.SLL]
-    elif linktype == 276:
-        decoders = [getattr(dpkt, "sll2", None) and dpkt.sll2.SLL2]
-    elif linktype in (12, 101, 228):
-        try:
-            return dpkt.ip.IP(buf)
-        except Exception:
-            return None
-    elif linktype == 229:
-        try:
-            return dpkt.ip6.IP6(buf)
-        except Exception:
-            return None
-    elif linktype in (0, 108):
-        # BSD loopback header: 4-byte address family followed by the IP packet.
-        if len(buf) > 4:
-            try:
-                return dpkt.ip.IP(buf[4:])
-            except Exception:
-                try:
-                    return dpkt.ip6.IP6(buf[4:])
-                except Exception:
-                    return None
-        return None
-    else:
-        decoders = [
-            dpkt.ethernet.Ethernet,
-            dpkt.sll.SLL,
-            getattr(dpkt, "sll2", None) and dpkt.sll2.SLL2,
-        ]
-
-    for decoder in decoders:
-        if decoder is None:
-            continue
-        try:
-            layer2 = decoder(buf)
-            if isinstance(layer2.data, (dpkt.ip.IP, dpkt.ip6.IP6)):
-                return layer2.data
-        except Exception:
-            pass
-
-    # Manual SLL2 fallback for older DPkt builds without dpkt.sll2: the SLL2
-    # header is 20 bytes and the first two bytes hold the EtherType.
-    if linktype == 276 and len(buf) > 20:
-        ethertype = int.from_bytes(buf[0:2], "big")
-        payload = buf[20:]
-        try:
-            if ethertype == 0x0800:
-                return dpkt.ip.IP(payload)
-            if ethertype == 0x86DD:
-                return dpkt.ip6.IP6(payload)
-        except Exception:
-            return None
-    return None
-
-
-def extract_flows_from_pcap(pcap_path: Union[str, Path], max_flows: int = 50) -> pd.DataFrame:
-    """
-    Extracts real bidirectional network flows from a PCAP/PCAPNG file using native DPkt packet parsing.
-    Reconstructs 5-tuple flows and computes flow duration, packet counts, payload bytes,
-    header lengths, TCP flags, and rates, outputting a DataFrame adhering to the 121-column ALL_FEATURES schema.
-    """
-    pcap_path = Path(pcap_path)
-    if not pcap_path.exists():
-        raise FileNotFoundError(f"PCAP file not found: {pcap_path}")
-
-    from features.contract import ALL_FEATURES
-
-    flow_data: Dict[Any, List[Dict[str, Any]]] = {}
-
-    with open(pcap_path, "rb") as f:
-        try:
-            reader = dpkt.pcap.Reader(f)
-        except Exception:
-            f.seek(0)
-            try:
-                reader = dpkt.pcapng.Reader(f)
-            except Exception as e:
-                logger.warning(f"Could not read PCAP {pcap_path}: {e}")
-                return pd.DataFrame(columns=ALL_FEATURES)
-
-        try:
-            linktype = int(reader.datalink())
-        except Exception:
-            linktype = None
-
-        for ts, buf in reader:
-            ip = _decode_link_layer(buf, linktype)
-
-            if not ip:
-                continue
-
-            is_ipv4 = isinstance(ip, dpkt.ip.IP)
-            src_ip = socket.inet_ntoa(ip.src) if is_ipv4 else socket.inet_ntop(socket.AF_INET6, ip.src)
-            dst_ip = socket.inet_ntoa(ip.dst) if is_ipv4 else socket.inet_ntop(socket.AF_INET6, ip.dst)
-            p_num = ip.p if is_ipv4 else ip.nxt
-            if p_num == dpkt.ip.IP_PROTO_TCP:
-                proto = "TCP"
-            elif p_num == dpkt.ip.IP_PROTO_UDP:
-                proto = "UDP"
-            else:
-                # The fitted NIDS contract only supports TCP/UDP.  ICMP, GRE,
-                # ESP and other IP protocols are skipped instead of poisoning
-                # the whole capture with an unsupported-protocol error.
-                continue
-
-            src_port, dst_port, header_len, payload_len, win = 0, 0, 20, 0, 0
-            flags = {}
-            if p_num == dpkt.ip.IP_PROTO_TCP and isinstance(ip.data, dpkt.tcp.TCP):
-                tcp = ip.data
-                src_port, dst_port = tcp.sport, tcp.dport
-                header_len = tcp.off * 4
-                payload_len = len(tcp.data)
-                win = tcp.win
-                flags = {
-                    "fin": 1 if (tcp.flags & dpkt.tcp.TH_FIN) else 0,
-                    "syn": 1 if (tcp.flags & dpkt.tcp.TH_SYN) else 0,
-                    "rst": 1 if (tcp.flags & dpkt.tcp.TH_RST) else 0,
-                    "psh": 1 if (tcp.flags & dpkt.tcp.TH_PUSH) else 0,
-                    "ack": 1 if (tcp.flags & dpkt.tcp.TH_ACK) else 0,
-                    "urg": 1 if (tcp.flags & dpkt.tcp.TH_URG) else 0,
-                    "ece": 1 if (tcp.flags & dpkt.tcp.TH_ECE) else 0,
-                    "cwr": 1 if (tcp.flags & dpkt.tcp.TH_CWR) else 0,
-                }
-            elif p_num == dpkt.ip.IP_PROTO_UDP and isinstance(ip.data, dpkt.udp.UDP):
-                udp = ip.data
-                src_port, dst_port = udp.sport, udp.dport
-                header_len = 8
-                payload_len = len(udp.data)
-
-            fkey = ((min(src_ip, dst_ip), min(src_port, dst_port)), (max(src_ip, dst_ip), max(src_port, dst_port)), proto)
-            if fkey not in flow_data:
-                flow_data[fkey] = []
-            flow_data[fkey].append({
-                "ts": float(ts), "src_ip": src_ip, "src_port": src_port,
-                "dst_ip": dst_ip, "dst_port": dst_port, "proto": proto,
-                "header_len": header_len, "payload_len": payload_len,
-                "flags": flags, "win": win
-            })
-
-    rows = []
-    for idx, (fkey, pkts) in enumerate(list(flow_data.items())[:max_flows]):
-        first = pkts[0]
-        init_src_ip = first["src_ip"]
-        init_src_port = first["src_port"]
-        init_dst_ip = first["dst_ip"]
-        init_dst_port = first["dst_port"]
-        proto = first["proto"]
-
-        fwd_pkts = [p for p in pkts if p["src_ip"] == init_src_ip]
-        bwd_pkts = [p for p in pkts if p["src_ip"] != init_src_ip]
-
-        dur = max(p["ts"] for p in pkts) - min(p["ts"] for p in pkts)
-        dur = max(dur, 0.000001)
-
-        row = {col: 0.0 for col in ALL_FEATURES}
-        row["flow_id"] = f"pcap-flow-{idx:03d}"
-        row["timestamp"] = datetime.fromtimestamp(first["ts"], tz=timezone.utc).isoformat()
-        row["src_ip"] = init_src_ip
-        row["src_port"] = init_src_port
-        row["dst_ip"] = init_dst_ip
-        row["dst_port"] = init_dst_port
-        row["protocol"] = proto
-        row["duration"] = dur
-        row["packets_count"] = len(pkts)
-        row["fwd_packets_count"] = len(fwd_pkts)
-        row["bwd_packets_count"] = len(bwd_pkts)
-
-        payloads = [p["payload_len"] for p in pkts]
-        row["total_payload_bytes"] = sum(payloads)
-        row["payload_bytes_max"] = max(payloads) if payloads else 0.0
-        row["payload_bytes_min"] = min(payloads) if payloads else 0.0
-        row["payload_bytes_mean"] = float(np.mean(payloads)) if payloads else 0.0
-        row["payload_bytes_std"] = float(np.std(payloads)) if payloads else 0.0
-        row["payload_bytes_variance"] = float(np.var(payloads)) if payloads else 0.0
-
-        fwd_payloads = [p["payload_len"] for p in fwd_pkts]
-        if fwd_payloads:
-            row["fwd_total_payload_bytes"] = sum(fwd_payloads)
-            row["fwd_payload_bytes_max"] = max(fwd_payloads)
-            row["fwd_payload_bytes_min"] = min(fwd_payloads)
-            row["fwd_payload_bytes_mean"] = float(np.mean(fwd_payloads))
-            row["fwd_payload_bytes_std"] = float(np.std(fwd_payloads))
-            row["fwd_payload_bytes_variance"] = float(np.var(fwd_payloads))
-
-        bwd_payloads = [p["payload_len"] for p in bwd_pkts]
-        if bwd_payloads:
-            row["bwd_total_payload_bytes"] = sum(bwd_payloads)
-            row["bwd_payload_bytes_max"] = max(bwd_payloads)
-            row["bwd_payload_bytes_min"] = min(bwd_payloads)
-            row["bwd_payload_bytes_mean"] = float(np.mean(bwd_payloads))
-            row["bwd_payload_bytes_std"] = float(np.std(bwd_payloads))
-            row["bwd_payload_bytes_variance"] = float(np.var(bwd_payloads))
-
-        headers = [p["header_len"] for p in pkts]
-        row["total_header_bytes"] = sum(headers)
-        row["max_header_bytes"] = max(headers) if headers else 0.0
-        row["min_header_bytes"] = min(headers) if headers else 0.0
-        row["mean_header_bytes"] = float(np.mean(headers)) if headers else 0.0
-        row["std_header_bytes"] = float(np.std(headers)) if headers else 0.0
-
-        for flag in ["fin", "syn", "rst", "psh", "ack", "urg", "ece", "cwr"]:
-            row[f"{flag}_flag_counts"] = sum(p["flags"].get(flag, 0) for p in pkts)
-            row[f"fwd_{flag}_flag_counts"] = sum(p["flags"].get(flag, 0) for p in fwd_pkts)
-            row[f"bwd_{flag}_flag_counts"] = sum(p["flags"].get(flag, 0) for p in bwd_pkts)
-
-        row["packets_rate"] = len(pkts) / dur
-        row["bytes_rate"] = row["total_payload_bytes"] / dur
-        row["fwd_packets_rate"] = len(fwd_pkts) / dur
-        row["bwd_packets_rate"] = len(bwd_pkts) / dur
-
-        if fwd_pkts:
-            row["fwd_init_win_bytes"] = fwd_pkts[0]["win"]
-        if bwd_pkts:
-            row["bwd_init_win_bytes"] = bwd_pkts[0]["win"]
-
-        rows.append(row)
-
-    if not rows:
-        return pd.DataFrame(columns=ALL_FEATURES)
-    return pd.DataFrame(rows)
+        out_df = self.extract_pcap_flows(pcap_path)
+        if output_csv is not None:
+            output_csv = Path(output_csv)
+            output_csv.parent.mkdir(parents=True, exist_ok=True)
+            out_df.to_csv(output_csv, index=False)
+        if out_df.empty:
+            return []
+        return self.predict_dataframe(out_df)
 
 
 # =====================================================================
@@ -1239,26 +1230,37 @@ class UnifiedThreatPipeline:
         ~ if benign: do not pass to llama -> model output
         ~ if attack: pass to llama -> llama output
         """
-        if flow_data is None:
-            sample_pcap = WORKSPACE_ROOT / "data" / "sample_traffic.pcap"
-            if sample_pcap.exists():
-                findings = self.nids.predict_pcap(sample_pcap)
+        try:
+            if flow_data is None:
+                sample_pcap = WORKSPACE_ROOT / "data" / "sample_traffic.pcap"
+                if sample_pcap.exists():
+                    findings = self.nids.predict_pcap(sample_pcap)
+                else:
+                    sample_csv = WORKSPACE_ROOT / "data" / "sample_flows.csv"
+                    findings = self.nids.predict_csv(sample_csv, limit=5)
+            elif isinstance(flow_data, (str, Path)):
+                p = Path(flow_data)
+                if p.suffix.lower() in [".pcap", ".pcapng"]:
+                    findings = self.nids.predict_pcap(p)
+                else:
+                    findings = self.nids.predict_csv(p)
+            elif isinstance(flow_data, dict):
+                df = pd.DataFrame([flow_data])
+                findings = self.nids.predict_dataframe(df)
+            elif isinstance(flow_data, pd.DataFrame):
+                findings = self.nids.predict_dataframe(flow_data) if not flow_data.empty else []
             else:
-                sample_csv = WORKSPACE_ROOT / "data" / "sample_flows.csv"
-                findings = self.nids.predict_csv(sample_csv, limit=5)
-        elif isinstance(flow_data, (str, Path)):
-            p = Path(flow_data)
-            if p.suffix.lower() in [".pcap", ".pcapng"]:
-                findings = self.nids.predict_pcap(p)
-            else:
-                findings = self.nids.predict_csv(p)
-        elif isinstance(flow_data, dict):
-            df = pd.DataFrame([flow_data])
-            findings = self.nids.predict_dataframe(df)
-        elif isinstance(flow_data, pd.DataFrame):
-            findings = self.nids.predict_dataframe(flow_data) if not flow_data.empty else []
-        else:
-            raise TypeError(f"Unsupported flow data type: {type(flow_data)}")
+                raise TypeError(f"Unsupported flow data type: {type(flow_data)}")
+        except (NTLFlowLyzerError, LiveCaptureError) as exc:
+            # Surface the extractor/capture diagnostic verbatim instead of
+            # fabricating a benign idle flow.
+            diagnostic = _capture_diagnostic(exc)
+            logger.error("Network capture failed: %s", diagnostic)
+            return build_no_flow_telemetry(
+                f"Network capture/flow extraction failed: {diagnostic}",
+                status="CAPTURE_ERROR",
+                capture_error=diagnostic,
+            )
 
         if not findings:
             return build_no_flow_telemetry(
@@ -1399,12 +1401,13 @@ class UnifiedThreatPipeline:
                     interface=live_interface,
                     duration_seconds=duration_seconds,
                 )
-            except LiveCaptureError as exc:
-                logger.error("Live capture failed on interface %s: %s", live_interface, exc)
+            except (LiveCaptureError, NTLFlowLyzerError) as exc:
+                diagnostic = _capture_diagnostic(exc)
+                logger.error("Live capture failed on interface %s: %s", live_interface, diagnostic)
                 telemetry = build_no_flow_telemetry(
-                    f"Live capture on interface '{live_interface}' failed: {exc}",
+                    f"Live capture on interface '{live_interface}' failed: {diagnostic}",
                     status="CAPTURE_ERROR",
-                    capture_error=str(exc),
+                    capture_error=diagnostic,
                 )
                 telemetry["window_size_seconds"] = duration_seconds
                 telemetry["window_size_label"] = window_size_label
@@ -1644,6 +1647,12 @@ class UnifiedMultiThreadedEngine:
                         "status": "IDLE",
                         "message": "Empty capture window: zero network flows captured in tumbling interval.",
                     })
+                    # An empty window is still a completed capture interval;
+                    # count it so operators can distinguish "no traffic" from
+                    # a stalled capture worker.
+                    with self._log_lock:
+                        self._status["nids_windows_processed"] += 1
+                        self._status["last_nids_event"] = datetime.now(timezone.utc).isoformat()
                     sleep_slices = max(1, min(self.capture_window_seconds, 3))
                     for _ in range(sleep_slices):
                         if not self._running:

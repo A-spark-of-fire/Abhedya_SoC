@@ -574,13 +574,13 @@ Input: ~ SMS Scam Detector telemetry output ~ PhishGuard URL Detector telemetry 
 
 ### Module 3: Network NIDS
 - **Input Workflows:**
-  - Real Live Interface Capture: Line-rate packet capture via Linux `dumpcap` on interfaces (`eth0`, `wlan0`, `lo`, `any`) parsed into the 121 BCCC feature contract via DPkt. The extractor reads the pcap link type (Ethernet / Linux SLL / SLL2 / raw IP / BSD loopback), filters to TCP/UDP flows, and reports an explicit `IDLE` or `CAPTURE_ERROR` status when no flows are available.
-  - Real PCAP / PCAPNG Replay: Real packet capture file ingestion parsed through native DPkt flow feature extraction (classic pcap and pcapng are both supported).
+  - Real Live Interface Capture: Line-rate packet capture via Linux `dumpcap` on interfaces (`eth0`, `wlan0`, `lo`, `any`) parsed into the 121 BCCC feature contract exclusively via NTLFlowLyzer. The extractor reads the capture, filters to TCP/UDP flows, and reports an explicit `IDLE` or `CAPTURE_ERROR` status when no flows or permissions are available.
+  - Real PCAP / PCAPNG Replay: Real packet capture file ingestion parsed through mandatory NTLFlowLyzer flow feature extraction (classic pcap and pcapng are both supported). Partial 40-column fallback parsers (DPkt) are deprecated.
 - **Two-Stage Architecture:**
   - Binary XGBoost detector ($\tau = 0.3545$) for line-rate packet flow filtering.
   - 13-class XGBoost classifier identifies DoS/DDoS, brute force, and exploit variants.
   - TreeExplainer SHAP attribution highlights the top-5 feature drivers responsible for the prediction.
-- **Empty-Window Contract:** `status: "IDLE"`, `total_flows_count: 0`, `findings: []`, `output_type: "no_output"`. Capture failures additionally return `status: "CAPTURE_ERROR"` and a `capture_error` string. No synthetic flow row is emitted.
+- **Empty-Window & Capture Contract:** `status: "IDLE"`, `total_flows_count: 0`, `findings: []`, `output_type: "no_output"`. Capture failures return `status: "CAPTURE_ERROR"` and an explicit `capture_error: "dumpcap unavailable or insufficient permissions (run sudo usermod -aG wireshark $USER)"`. No synthetic or fallback flow rows (`sample_flows.csv`) are ever emitted.
 
 ---
 
@@ -630,17 +630,19 @@ Model assets are saved to `models/llama/`:
 
 ## Verification & Testing
 
-Execute the automated test suite in [test_llama_stitch.py](file:///media/abhilash/SSD2/projects/bharat_ai_soc_challenge/Abhedya_SoC/tests/test_llama_stitch.py):
+Execute the automated test suite discovering all unit and integration tests:
 
 ```bash
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest tests/test_llama_stitch.py
+python -m unittest discover -s tests -p "test_*.py"
 ```
 
-The automated unit and integration suite verifies:
+The test discovery suite executes 23 comprehensive unit and integration tests:
+
+### 1. ExecuTorch Stitching Suite (`tests/test_llama_stitch.py` — 14 tests)
 1. Llama 3.2 Instruct token formatting and header adherence (`<|begin_of_text|>`, `<|start_header_id|>`, `<|eot_id|>`).
 2. Deterministic grounded fallback alert formatting (exact 3 parts, exactly 3 action steps).
 3. End-to-end Pipeline 2 smishing and phishing URL detection.
-4. End-to-end Pipeline 1 real PCAP packet replay and benign flow handling (verifying benign flows bypass LLaMA ➔ Model Output).
+4. End-to-end Pipeline 1 real PCAP packet replay and benign flow handling (verifying benign flows bypass LLaMA ➔ Model Output via NTLFlowLyzer).
 5. On-device reasoning toggle enable/disable behavior.
 6. ExecuTorch runner execution safety and binary absence handling.
 7. Architectural separation and correctness for **Pipeline 1** (`live network -> NIDS -> Prompt 1 (input: NIDS telemetry for attack) -> Output`) and **Pipeline 2** (`user input -> SMS -> Extract URL -> PhishGuard -> Prompt 2 (input: SMS + PhishGuard telemetry) -> Output`).
@@ -651,6 +653,31 @@ The automated unit and integration suite verifies:
 12. Standardized 1-minute window size: Pipeline 1 default window size is 60 seconds (1 minute), returning `window_size_seconds: 60` and `window_size_label: "1 min"`.
 13. Continuous tumbling stream lifecycle: `stream_pipeline_1` automatically yields new 1-minute windows, updates sequence counters, and automatically discards previous window state.
 14. Flask REST API default duration: `/api/pipeline1` defaults to 60s (1 min) duration and returns window size metadata.
+
+### 2. Multi-Threaded Dual Engine & Edge Safety Suite (`tests/test_multithreaded_pipeline.py` — 9 tests)
+1. `test_01_concurrent_execution_of_thread1_and_thread2`: Concurrent execution of Thread 1 (NIDS continuous capture) and Thread 2 (asynchronous SMS/URL queue listener).
+2. `test_02_llm_mutex_prevents_simultaneous_invocations`: Global `llm_lock` serializes access to ExecuTorch Llama 3.2 engine to prevent RAM overload (~1.2 GB limit).
+3. `test_03_benign_flows_and_clean_sms_bypass_llm`: Sub-2ms instant evaluation for benign traffic and clean SMS messages (0 LLM compute overhead).
+4. `test_04_graceful_handling_of_empty_capture_windows`: Graceful handling of empty capture intervals emitting `status: "IDLE"`.
+5. `test_05_threat_traffic_triggers_llm_under_mutex`: Malicious payloads acquire `llm_lock` and invoke prompt generation safely.
+6. `test_06_nonblocking_queue_under_simulated_llm_delay`: Non-blocking sensor evaluation so incoming network packets and SMS texts are never dropped while Llama inference runs.
+7. `test_07_explicit_capture_error_reporting`: Explicit `CAPTURE_ERROR` reporting without silent fallbacks to `sample_flows.csv`.
+8. `test_08_prompt_safety_and_scammer_advice_prevention`: Negative prompt constraints and automatic sanitization preventing hallucinated scammer instructions in generated text.
+9. `test_09_executorch_runner_token_budget_and_stats_filter`: Verifies default `max_new_tokens=120`, `timeout=180s`, and automated filtering of `llama_main` execution statistics lines (`tokens/sec`, `prefill time`).
+
+---
+
+## Raspberry Pi 5 Deployment Bug Fixes (Audit Resolutions)
+
+Following the Raspberry Pi 5 deployment audit (`Abhedya_SoC_Pi5_Deployment_Report.pdf`), 5 critical hardware deployment bugs were resolved:
+
+| Problem ID | Issue Identified | Resolution Implemented | File(s) Modified |
+| :--- | :--- | :--- | :--- |
+| **Problem 1** | Streaming multi-byte UTF-8 sequences and emojis broke CLI runner decoding. | Configured `subprocess.run` with `encoding="utf-8"`, `errors="replace"`, and `timeout=180`. Implemented `filter_executorch_stats()` to strip CLI execution stats (`[INFO]`, `tokens/sec`, `prefill time`). | `executorch_runner.py`, `llama_prompt_builder.py` |
+| **Problem 2** | Llama 3.2 1B-Instruct echoed scammer instructions (e.g. telling user to verify KYC). | Constrained Llama to write **ONLY** the 1-sentence threat summary. Populated Technical Reason and 3 Recommended Actions deterministically from pre-reviewed safe templates (SHAP / trigger dictionary). Added negative constraints to all System Prompts and implemented scammer advice sanitizer. | `llama_prompt_builder.py`, `executorch_runner.py` |
+| **Problem 3** | LLM generation latency on Arm CPU was ~41s with `max_new_tokens=256`. | Reduced `max_new_tokens` to `120` (trimming latency to ~12–15s). Enforced strict `status == "ALERT"` condition before invoking LLM; benign/clean events immediately bypass the LLM. | `executorch_runner.py`, `unified_pipeline.py` |
+| **Problem 4** | Partial 40-column fallback `dpkt` parser caused feature mismatch with XGBoost. | Standardized `NTLFlowLyzer` as the sole flow extraction engine for PCAP replays and live captures, extracting all 121 trained features. Deprecated DPkt fallback. | `unified_pipeline.py` |
+| **Problem 5** | Live capture failure silently fell back to `sample_flows.csv`, hiding permission issues. | Removed all silent CSV fallbacks. Missing `dumpcap` or lack of `wireshark` group permissions returns an explicit `CAPTURE_ERROR` payload with diagnostic instruction. | `unified_pipeline.py`, `tests/test_multithreaded_pipeline.py` |
 
 ---
 

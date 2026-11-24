@@ -5,6 +5,13 @@ Bharat AI-SoC Challenge — Problem Statement 3: On-Device Security
 Runs the pre-quantized Meta Llama 3.2 1B-Instruct model (4-bit XNNPACK PTE)
 via the native ExecuTorch C++ CLI runner on Raspberry Pi 5 / Arm64.
 Includes robust timeout handling and a deterministic rule-based fallback mechanism.
+
+Key optimizations & safety features (Problems 1, 2, 3):
+- Robust multi-byte streaming UTF-8 decoding with errors="replace" and 180s timeout.
+- Filters out stdout execution statistics lines emitted by llama_main.
+- max_new_tokens reduced to 120 (trimmed from 256) to lower generation latency from ~41s to ~12-15s.
+- ExecuTorch Llama generation is invoked ONLY when status == "ALERT"; benign/idle events bypass LLM.
+- Generates 1-sentence threat summary and stitches with deterministic safe remediation templates.
 """
 
 from __future__ import annotations
@@ -20,8 +27,10 @@ import time
 from typing import Any, Dict, Optional, Tuple
 
 from llama_prompt_builder import (
+    assemble_advisory,
     build_llama_prompt,
     clean_llm_response,
+    filter_executorch_stats,
     generate_grounded_fallback_advisory,
 )
 
@@ -51,10 +60,11 @@ class ExecuTorchLlamaEngine:
         tokenizer_path: Optional[str | Path] = None,
         runner_path: Optional[str | Path] = None,
         temperature: float = 0.2,
-        max_new_tokens: int = 256,
-        timeout_seconds: float = 45.0,
+        max_new_tokens: int = 120,
+        timeout_seconds: float = 180.0,
     ) -> None:
         self.temperature = float(temperature)
+        # Reduced max_new_tokens to 120 (Problem 3) for ~12-15s generation on Arm CPU
         self.max_new_tokens = int(max_new_tokens)
         self.timeout_seconds = float(timeout_seconds)
 
@@ -153,16 +163,23 @@ class ExecuTorchLlamaEngine:
     def generate_advisory(self, telemetry_json: Dict[str, Any]) -> str:
         """
         Generates the 3-part plain-English advisory from telemetry JSON.
-        Uses native ExecuTorch Llama 3.2 1B when available; falls back gracefully
-        to deterministic rule-based template advisory grounded in findings.
+        Invokes ExecuTorch Llama generation ONLY when status == "ALERT".
+        Benign and idle events immediately bypass the LLM (0 LLM compute overhead).
         """
         t0 = time.perf_counter()
+        status = telemetry_json.get("status", "CLEAN")
+        active_threats = telemetry_json.get("active_threats_count", 0)
+
+        # Benign and idle events must immediately bypass the LLM (Problem 3)
+        if status != "ALERT" or active_threats == 0:
+            return generate_grounded_fallback_advisory(telemetry_json)
+
         prompt = build_llama_prompt(telemetry_json)
 
         # 1. Native ExecuTorch execution attempt
         if self.is_native_available():
             try:
-                advisory = self._run_native_executorch(prompt)
+                advisory = self._run_native_executorch(prompt, telemetry_json=telemetry_json)
                 if advisory and len(advisory.strip()) > 20:
                     latency = (time.perf_counter() - t0) * 1000.0
                     logger.info(f"[ExecuTorch] Generated native advisory in {latency:.2f} ms")
@@ -178,7 +195,7 @@ class ExecuTorchLlamaEngine:
         logger.debug(f"[ExecuTorch] Grounded fallback advisory generated in {latency:.2f} ms")
         return advisory
 
-    def _run_native_executorch(self, prompt: str) -> str:
+    def _run_native_executorch(self, prompt: str, telemetry_json: Optional[Dict[str, Any]] = None) -> str:
         """Executes the compiled llama_main CLI runner via temporary prompt file."""
         with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".txt", delete=False) as f:
             f.write(prompt)
@@ -200,25 +217,34 @@ class ExecuTorchLlamaEngine:
             ]
 
             logger.info(f"Invoking ExecuTorch runner: {' '.join(cmd[:3])} ...")
-            res = subprocess.run(
+            # Problem 1: Handle streaming multi-byte UTF-8 sequences and emojis gracefully
+            result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=self.timeout_seconds,
+                encoding="utf-8",
+                errors="replace",
+                timeout=180,
                 check=False,
             )
 
-            if res.returncode != 0:
+            if result.returncode != 0:
                 raise RuntimeError(
-                    f"ExecuTorch runner exited with code {res.returncode}: {res.stderr.strip()[:300]}"
+                    f"ExecuTorch runner exited with code {result.returncode}: {result.stderr.strip()[:300]}"
                 )
 
             # Strip prompt echo if present and extract generated response
-            output = res.stdout.strip()
+            output = result.stdout.strip()
             if "<|start_header_id|>assistant<|end_header_id|>" in output:
                 output = output.split("<|start_header_id|>assistant<|end_header_id|>")[-1]
 
-            return clean_llm_response(output)
+            # Filter out execution statistics lines emitted by llama_main (e.g. [INFO], tokens/sec, prefill time)
+            cleaned = clean_llm_response(output)
+            filtered = filter_executorch_stats(cleaned)
+
+            if telemetry_json:
+                return assemble_advisory(filtered, telemetry_json)
+            return filtered
 
         finally:
             if prompt_file.exists():

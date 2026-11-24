@@ -71,7 +71,7 @@ class TestMultiThreadedDualEngine(unittest.TestCase):
 
         # Both threads must be concurrently active
         self.assertEqual(status["engine_state"], "RUNNING")
-        self.assertIn(status["nids_thread"], ["RUNNING", "CAPTURING", "CLASSIFYING", "IDLE"])
+        self.assertIn(status["nids_thread"], ["RUNNING", "CAPTURING", "CLASSIFYING", "IDLE", "CAPTURE_ERROR"])
         self.assertIn(status["sms_thread"], ["RUNNING", "IDLE", "PROCESSING"])
 
         # Thread 2 handles queue while Thread 1 runs tumbling windows
@@ -259,6 +259,64 @@ class TestMultiThreadedDualEngine(unittest.TestCase):
         time.sleep(2.0)
 
         engine.stop()
+
+    def test_07_explicit_capture_error_reporting(self):
+        """7. Verify explicit CAPTURE_ERROR returned when dumpcap is unavailable without silent fallback."""
+        res = self.pipeline.run_pipeline_1(live_interface="nonexistent_iface_999", duration_seconds=1)
+        self.assertEqual(res["status"], "CAPTURE_ERROR")
+        self.assertEqual(res["total_flows_count"], 0)
+        self.assertEqual(res["findings"], [])
+        self.assertIn("dumpcap unavailable or insufficient permissions (run sudo usermod -aG wireshark $USER)", res["capture_error"])
+
+    def test_08_prompt_safety_and_scammer_advice_prevention(self):
+        """8. Verify System Prompt contains negative constraints and advisory prevents scammer echo."""
+        from llama_prompt_builder import (
+            SYSTEM_PROMPT,
+            SYSTEM_PROMPT_PIPELINE_1,
+            SYSTEM_PROMPT_PIPELINE_2,
+            assemble_advisory,
+            SAFETY_NEGATIVE_CONSTRAINT,
+        )
+        self.assertIn("NEVER tell the user to click links, complete KYC, verify accounts, or call phone numbers", SAFETY_NEGATIVE_CONSTRAINT)
+        self.assertIn(SAFETY_NEGATIVE_CONSTRAINT, SYSTEM_PROMPT)
+        self.assertIn(SAFETY_NEGATIVE_CONSTRAINT, SYSTEM_PROMPT_PIPELINE_1)
+        self.assertIn(SAFETY_NEGATIVE_CONSTRAINT, SYSTEM_PROMPT_PIPELINE_2)
+
+        # Test that scammer advice in generated summary is sanitized
+        telemetry = {
+            "status": "ALERT",
+            "active_threats_count": 1,
+            "findings": [
+                {
+                    "module": "SMS_Spam_Detector",
+                    "is_threat": True,
+                    "threat_score": 0.99,
+                    "threat_level": "HIGH",
+                    "detected_triggers": ["kyc", "blocked"]
+                }
+            ]
+        }
+        hallucinated_summary = "Please click the link immediately to complete KYC and verify account."
+        adv = assemble_advisory(hallucinated_summary, telemetry)
+        self.assertNotIn("click the link", adv.lower())
+        self.assertIn("⚠️ **Threat Summary:**", adv)
+        self.assertIn("🔍 **Technical Reason:**", adv)
+        self.assertIn("🛡️ **Recommended Actions:**", adv)
+
+    def test_09_executorch_runner_token_budget_and_stats_filter(self):
+        """9. Verify runner default max_new_tokens is 120 and execution stats are filtered."""
+        from executorch_runner import ExecuTorchLlamaEngine
+        from llama_prompt_builder import filter_executorch_stats
+        engine = ExecuTorchLlamaEngine()
+        self.assertEqual(engine.max_new_tokens, 120)
+        self.assertEqual(engine.timeout_seconds, 180.0)
+
+        raw_stats = "[INFO:llama_runner.cpp:100] Model loaded.\ntokens/sec: 8.5\nprefill time: 1.2s\n⚠️ **Threat Summary:** Active attack detected."
+        filtered = filter_executorch_stats(raw_stats)
+        self.assertNotIn("tokens/sec", filtered)
+        self.assertNotIn("[INFO", filtered)
+        self.assertNotIn("prefill time", filtered)
+        self.assertIn("Active attack detected", filtered)
 
 
 if __name__ == "__main__":

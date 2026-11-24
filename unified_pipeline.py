@@ -69,6 +69,16 @@ for p in [WORKSPACE_ROOT, MODULES_DIR, SMS_DIR, PHISH_DIR, NIDS_DIR]:
     if p.exists() and p_str not in sys.path:
         sys.path.insert(0, p_str)
 
+# Ensure Python user script directories (where pip installs ntlflowlyzer) are on PATH
+try:
+    import site
+    if site.ENABLE_USER_SITE and hasattr(site, "USER_BASE"):
+        user_scripts = Path(site.USER_BASE) / ("Scripts" if os.name == "nt" else "bin")
+        if user_scripts.exists() and str(user_scripts) not in os.environ.get("PATH", ""):
+            os.environ["PATH"] = str(user_scripts) + os.pathsep + os.environ.get("PATH", "")
+except Exception:
+    pass
+
 # NTLFlowLyzer is the single, mandatory flow-extraction engine for every
 # network capture in this pipeline.  The NIDS submodule owns the feature
 # contract, column mapping, pcap/pcapng conversion, and extractor execution.
@@ -562,9 +572,8 @@ def _find_dumpcap() -> str:
         if Path(candidate).exists():
             return candidate
     raise LiveCaptureError(
-        "dumpcap is not installed or not on PATH. Install Wireshark's capture "
-        "tools with `sudo apt install wireshark-common`, then grant capture "
-        "permissions to your user (see README: Live Capture Troubleshooting)."
+        "dumpcap unavailable or insufficient permissions (run sudo usermod -aG wireshark $USER)",
+        stderr="dumpcap unavailable or insufficient permissions (run sudo usermod -aG wireshark $USER)"
     )
 
 
@@ -857,10 +866,8 @@ def capture_live_network(
         if proc.returncode != 0:
             detail = (proc.stderr or proc.stdout or "").strip()
             raise LiveCaptureError(
-                f"dumpcap failed on interface '{interface}' (exit {proc.returncode}): "
-                f"{detail or 'unknown error'}. Check that the interface exists and that "
-                "your user has packet-capture permission (see README: Live Capture Troubleshooting).",
-                stderr=detail or f"dumpcap exited with status {proc.returncode}",
+                "dumpcap unavailable or insufficient permissions (run sudo usermod -aG wireshark $USER)",
+                stderr=detail or "dumpcap unavailable or insufficient permissions (run sudo usermod -aG wireshark $USER)",
             )
 
         if not tmp_path.exists() or tmp_path.stat().st_size <= 24:
@@ -1147,18 +1154,27 @@ class UnifiedThreatPipeline:
           - if benign (no attacks): do not pass to llama -> model output
           - if attack: pass to llama -> llama output
         """
-        # Enforce Pipeline 1 per-flow / window routing contract:
-        # If Pipeline 1 is indicated and no attacks are flagged, do NOT pass to LLaMA
-        if pipeline_type == 1 and telemetry.get("active_threats_count", 0) == 0:
+        # Enforce Pipeline routing:
+        # If benign / clean / idle, do NOT pass to LLaMA -> model output (Problem 3)
+        status = telemetry.get("status", "CLEAN")
+        active_threats = telemetry.get("active_threats_count", 0)
+
+        if status != "ALERT" or active_threats == 0:
             telemetry["passed_to_llama"] = False
             telemetry["output_type"] = "model_output"
             telemetry["llama_prompt"] = None
             telemetry["llama_advisory"] = None
             if "output" not in telemetry:
-                telemetry["output"] = {
-                    "verdict": "Benign",
-                    "summary": "All network flows verified benign by two-stage XGBoost NIDS. LLaMA reasoning bypassed to conserve edge resources."
-                }
+                if pipeline_type == 1:
+                    telemetry["output"] = {
+                        "verdict": "Benign",
+                        "summary": "All network flows verified benign by two-stage XGBoost NIDS. LLaMA reasoning bypassed to conserve edge resources."
+                    }
+                else:
+                    telemetry["output"] = {
+                        "verdict": "Clean",
+                        "summary": "All communication and link sensors verified clean. LLaMA reasoning bypassed to conserve edge resources."
+                    }
             return telemetry
 
         telemetry["passed_to_llama"] = True
@@ -1403,6 +1419,8 @@ class UnifiedThreatPipeline:
                 )
             except (LiveCaptureError, NTLFlowLyzerError) as exc:
                 diagnostic = _capture_diagnostic(exc)
+                if "dumpcap" in diagnostic.lower() or "permission" in diagnostic.lower():
+                    diagnostic = "dumpcap unavailable or insufficient permissions (run sudo usermod -aG wireshark $USER)"
                 logger.error("Live capture failed on interface %s: %s", live_interface, diagnostic)
                 telemetry = build_no_flow_telemetry(
                     f"Live capture on interface '{live_interface}' failed: {diagnostic}",
@@ -1637,7 +1655,30 @@ class UnifiedMultiThreadedEngine:
         while self._running:
             try:
                 self._update_status(nids_thread="CAPTURING")
-                flow_df = self._capture_network_window()
+                try:
+                    flow_df = self._capture_network_window()
+                except LiveCaptureError as lce:
+                    err_msg = "dumpcap unavailable or insufficient permissions (run sudo usermod -aG wireshark $USER)"
+                    self._update_status(nids_thread="CAPTURE_ERROR")
+                    self._log_event({
+                        "thread": "nids",
+                        "type": "CAPTURE_ERROR",
+                        "status": "CAPTURE_ERROR",
+                        "total_flows_count": 0,
+                        "findings": [],
+                        "capture_error": err_msg,
+                        "message": err_msg,
+                    })
+                    with self._log_lock:
+                        self._status["nids_windows_processed"] += 1
+                        self._status["last_nids_event"] = datetime.now(timezone.utc).isoformat()
+                    self._update_status(nids_thread="IDLE")
+                    sleep_slices = max(1, min(self.capture_window_seconds, 3))
+                    for _ in range(sleep_slices):
+                        if not self._running:
+                            break
+                        time.sleep(1.0)
+                    continue
 
                 if flow_df is None or flow_df.empty:
                     self._update_status(nids_thread="IDLE")
@@ -1645,6 +1686,8 @@ class UnifiedMultiThreadedEngine:
                         "thread": "nids",
                         "type": "IDLE",
                         "status": "IDLE",
+                        "total_flows_count": 0,
+                        "findings": [],
                         "message": "Empty capture window: zero network flows captured in tumbling interval.",
                     })
                     # An empty window is still a completed capture interval;
@@ -1754,33 +1797,16 @@ class UnifiedMultiThreadedEngine:
 
     def _capture_network_window(self) -> Optional[pd.DataFrame]:
         """
-        Captures or provides flows for one tumbling window.
-        1. Custom flow generator hook (used for automated unit tests).
-        2. Live dumpcap ring-buffer capture on Linux / Raspberry Pi 5.
-        3. Fallback to sample flows on dev machines.
+        Captures flows for one tumbling window using live dumpcap & NTLFlowLyzer.
+        Does NOT silently fall back to sample_flows.csv on live capture failure (Problem 5).
         """
         if self.custom_flow_generator is not None:
             return self.custom_flow_generator()
 
-        import platform
-        if platform.system() == "Linux" and shutil.which("dumpcap"):
-            try:
-                df = self.pipeline.nids.capture_live_network(
-                    interface=self.nids_interface,
-                    duration_seconds=self.capture_window_seconds
-                )
-                return df
-            except Exception as e:
-                logger.debug(f"Live capture error: {e}")
-                return None
-        else:
-            sample_csv = WORKSPACE_ROOT / "data" / "sample_flows.csv"
-            if not sample_csv.exists():
-                sample_csv = NIDS_DIR / "tests" / "fixtures" / "parity_rows.csv"
-            if sample_csv.exists():
-                df = pd.read_csv(sample_csv, nrows=3, low_memory=False)
-                return df
-            return None
+        return self.pipeline.nids.capture_live_network(
+            interface=self.nids_interface,
+            duration_seconds=self.capture_window_seconds
+        )
 
     # -- Thread 2: Event-Driven SMS & URL Listener ---------------------
 

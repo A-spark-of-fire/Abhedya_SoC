@@ -14,7 +14,7 @@ The system is structured around two dedicated end-to-end processing pipelines or
 | Module | Source Repository | Model | Accuracy | Latency |
 |--------|------------------|-------|----------|---------|
 | **SMS Scam Detector** | `A-spark-of-fire/SMS_Spam_Detector` | Stacking Ensemble (LinearSVC + LogisticRegression + MultinomialNB) | 99.26% | < 1 ms |
-| **Phishing URL Detector** | `SwastikSaha/PhishGuard` | PyTorch MLP (375k params, 14 numeric + 1 categorical) | 97.4% | < 2 ms |
+| **Phishing URL Detector** | `SwastikSaha/PhishGuard` | Character n-gram TF-IDF + numeric URL features + Logistic Regression | — | < 2 ms |
 | **Network NIDS** | `Abhil4sh777/nids` | Two-Stage 13-Class XGBoost + SHAP TreeExplainer | — | < 2 ms |
 | **Edge Reasoning Engine** | Local ExecuTorch 1.5.1 | Meta Llama 3.2 1B-Instruct (4-bit XNNPACK PTE) | Deterministic Grounding | On-Device |
 
@@ -35,7 +35,7 @@ Under **Approach 2**, Pipeline 1 (Live Network NIDS) and Pipeline 2 (Smishing & 
 
 ### Thread 2: Event-Driven SMS & URL Listener
 - **Asynchronous Queue Listener:** Managed by dedicated background thread `sms_thread` ingesting from `_sms_queue`.
-- **Processing:** De-obfuscate text -> 25,049-Dim Stacking Ensemble -> PhishGuard PyTorch MLP (auto-extracted links).
+- **Processing:** De-obfuscate text -> 25,049-Dim Stacking Ensemble -> PhishGuard TF-IDF + Logistic Regression URL classifier (auto-extracted links).
 - **Clean Content:** Emits instant clean log (<1 ms, 0 LLM compute overhead).
 - **Threat Detected:** Acquires `llm_lock`, generates ExecuTorch Llama Prompt 2 safety alert, and releases `llm_lock`.
 
@@ -89,7 +89,7 @@ flowchart TD
         U1["User Input (SMS / Direct Text Message)"] --> U2["De-Obfuscation Engine (Spaced text, leetspeak repair)"]
         U2 --> U3["SMS Scam Detector (Stacking Ensemble Classifier)"]
         U1 --> U4["Auto-Link Extractor (Embedded URLs / Domains)"]
-        U4 --> U5["PhishGuard URL Detector (PyTorch MLP Feature Analyzer)"]
+        U4 --> U5["PhishGuard URL Detector (Character n-gram TF-IDF + Numeric Features + Logistic Regression)"]
         U3 --> U6["SMS Telemetry Output (Threat Level + Keyword Triggers)"]
         U5 --> U7["PhishGuard URL Telemetry Output (Phishing Score + Domain Anomalies)"]
         U6 --> U8["Llama Prompt 2 Constructor (Input: ~ SMS Telemetry ~ URL Telemetry)"]
@@ -223,7 +223,7 @@ flowchart LR
    - Text is passed through the de-obfuscation engine (normalizing spaced text `k y c` → `kyc`, leetspeak `b@nk` → `bank`, dot hiding `dr . ugs` → `drugs`).
    - Analyzed by the 25,049-dimension Stacking Ensemble classifier (`tau = 0.390`), outputting threat score, risk level, and extracted trigger words.
 3. **Auto-Link Extraction:** The regex engine automatically extracts any embedded URLs, IP hostnames, or shortlinks without manual intervention.
-4. **PhishGuard URL Verification:** Extracted URLs are routed directly to the PyTorch MLP (375k parameters) to detect lexical anomalies, brand impersonation, entropy spikes, and high-risk TLDs (`.xyz`, `.top`, etc.).
+4. **PhishGuard URL Verification:** Extracted URLs are routed to PhishGuard, which combines character n-gram TF-IDF features with numeric URL features and classifies them using Logistic Regression.
 5. **Llama Prompt 2:** Both telemetry results (SMS threat score + PhishGuard URL confidence and domain anomalies) are merged into `build_llama_prompt_pipeline_2()` with `SYSTEM_PROMPT_PIPELINE_2`, embedding the contract: `Input: ~ SMS Scam Detector telemetry output ~ PhishGuard URL Detector telemetry output`.
 6. **Output Generation:** Local Llama 3.2 synthesizes a user-friendly alert:
    - ⚠️ **Threat Summary:** Identifies the deceptive impersonation scheme and fraudulent website.
@@ -274,11 +274,9 @@ Abhedya_SoC/
 │   │   └── sms_decision_threshold.pkl
 │   ├── phishguard/              # Submodule: SwastikSaha/PhishGuard
 │   │   ├── phishguard_artifacts/
-│   │   │   ├── phishguard_mlp.pth
-│   │   │   ├── preprocessor.joblib
-│   │   │   └── model_config.json
+│   │   │   └── phishguard_model.joblib
 │   │   ├── live_classifier.py
-│   │   └── mlp_model.py
+│   │   └── model.py
 │   └── nids/                    # Submodule: Abhil4sh777/nids
 │       ├── models/
 │       │   ├── detector.joblib  # Binary XGBoost detector (tau=0.3545)
@@ -336,7 +334,6 @@ sudo usermod -aG wireshark $USER
 pip install -r requirements.txt
 
 # For Raspberry Pi 5 (ARM64), install CPU-optimized PyTorch:
-pip install torch --index-url https://download.pytorch.org/whl/cpu
 ```
 
 ### 3. Run Pipeline 1 via CLI (Live Network Capture / PCAP Replay)
@@ -409,7 +406,7 @@ The Abhedya SoC security platform provides two complementary web interfaces (Str
 - **RFC 8259 Telemetry JSON:** Downstream-ready standardized schema.
 
 ### 2. Tab 2: Pipeline 2 Interface (User Input ➔ SMS ➔ Extract URL ➔ PhishGuard ➔ Llama Prompt 2 ➔ Output)
-- **Visual Pipeline Breadcrumbs:** Real-time step progress (`User Input Text` ➔ `Text De-Obfuscation` ➔ `SMS Scam Ensemble` ➔ `Auto-Link Extractor` ➔ `PhishGuard URL MLP` ➔ `Llama Prompt 2 Constructor` ➔ `ExecuTorch Safety Advisory`).
+- **Visual Pipeline Breadcrumbs:** Real-time step progress (`User Input Text` ➔ `Text De-Obfuscation` ➔ `SMS Scam Ensemble` ➔ `Auto-Link Extractor` ➔ `PhishGuard URL Classifier` ➔ `Llama Prompt 2 Constructor` ➔ `ExecuTorch Safety Advisory`).
 - **Interactive Preset Scenarios:**
   - *Bank KYC Smish:* Urgency text with high-risk deceptive phishing link (`http://sbi-banking-verify-update.xyz/login.php?user=victim`).
   - *Lottery Prize Scam:* Cash reward social engineering with URL shortlink (`https://bit.ly/claim-prize-now`).
@@ -566,10 +563,10 @@ Input: ~ SMS Scam Detector telemetry output ~ PhishGuard URL Detector telemetry 
 - **Decision Threshold:** $\tau = 0.390$
 
 ### Module 2: PhishGuard URL Detector
-- **Model Architecture:** PyTorch Multilayer Perceptron (MLP) with 375,000 parameters.
+- **Model Architecture:** Character n-gram TF-IDF + numeric URL features + Logistic Regression.
 - **Feature Extraction:**
-  - 14 numeric features: URL length, Shannon entropy, slash counts, query length, domain entropy, subdomain depth, digit count, hyphen count, HTTPS flag, raw IP flag, `@` symbol presence.
-  - 1 categorical feature (TLD) mapped via OneHotEncoder.
+  - Character-level TF-IDF n-grams capture lexical patterns in URLs.
+  - Numeric URL features capture structural properties such as URL length, entropy, path/query characteristics, and domain structure.
 - **Anomaly Detection:** Flags suspicious TLDs (`.xyz`, `.top`, `.tk`), credential-harvesting keywords (`login`, `verify`, `kyc`, `banking`), and brand typosquatting.
 
 ### Module 3: Network NIDS
@@ -591,7 +588,7 @@ Input: ~ SMS Scam Detector telemetry output ~ PhishGuard URL Detector telemetry 
 | `GET /api/health` | GET | System | Edge SoC health check, model/pipeline status, and live-capture `dumpcap` availability/version |
 | `GET /api/interfaces` | GET | Network Engine | Returns detected Linux network interfaces for live capture (`dumpcap -D`) |
 | `POST /api/pipeline1` | POST | **Pipeline 1** | Evaluates live network interface traffic (`dumpcap`) in 1-minute windows (default: `duration: 60`, returns `window_size_seconds: 60`, `window_size_label: "1 min"`, `window_number`) or real PCAP replay (`sample_traffic.pcap`), runs two-stage NIDS + SHAP, applies per-flow routing (benign ➔ model output, attack ➔ LLaMA output), and outputs structured telemetry |
-| `POST /api/pipeline2` | POST | **Pipeline 2** | Evaluates user input text, runs text de-obfuscation and SMS scam classifier, auto-extracts URLs, runs PhishGuard URL MLP, builds Llama Prompt 2, and outputs advisory |
+| `POST /api/pipeline2` | POST | **Pipeline 2** | Evaluates user input text, runs text de-obfuscation and SMS scam classifier, auto-extracts URLs, runs PhishGuard URL Classifier, builds Llama Prompt 2, and outputs advisory |
 
 `POST /api/pipeline1` returns one of four statuses:
 
